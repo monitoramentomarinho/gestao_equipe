@@ -83,7 +83,7 @@ export default function SupervisorLayout({
         <nav className="flex flex-wrap items-center justify-center gap-2 sm:gap-4 w-full sm:w-auto">
           <Link
             href="/agente"
-            className="text-sm font-medium text-gray-600 hover:text-blue-600 p-2"
+            className="text-sm font-medium text-white hover:text-blue-600 p-2"
           >
             Início
           </Link>
@@ -98,13 +98,18 @@ export default function SupervisorLayout({
             <Button
               variant="ghost"
               size="sm"
-              className="text-gray-600 hover:text-blue-600"
+              className="text-white hover:text-blue-600"
             >
               Meu Perfil
             </Button>
           </Link>
 
-          <Button variant="ghost" size="sm" onClick={handleSair}>
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={handleSair}
+            className="bg-white"
+          >
             Sair
           </Button>
         </nav>

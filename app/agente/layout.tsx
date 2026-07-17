@@ -44,7 +44,7 @@ export default function AgenteLayout({
           </Link>
 
           {/* Novo Botão de Perfil */}
-          <Link href="/perfil">
+          <Link href="/agente/perfil">
             <Button
               variant="ghost"
               size="sm"
@@ -54,7 +54,7 @@ export default function AgenteLayout({
             </Button>
           </Link>
 
-          <Button variant="ghost" size="sm" onClick={handleSair}>
+          <Button variant="destructive" size="sm" onClick={handleSair}>
             Sair
           </Button>
         </nav>
