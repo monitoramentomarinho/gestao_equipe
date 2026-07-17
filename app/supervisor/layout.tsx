@@ -81,35 +81,30 @@ export default function SupervisorLayout({
         </div>
 
         <nav className="flex flex-wrap items-center justify-center gap-2 sm:gap-4 w-full sm:w-auto">
-          <Link href="/supervisor/relatorio_de_producao">
+          <Link
+            href="/agente"
+            className="text-sm font-medium text-gray-600 hover:text-blue-600 p-2"
+          >
+            Início
+          </Link>
+          <Link href="/agente/formulario">
+            <Button variant="outline" size="sm" className="w-full sm:w-auto">
+              Novo Registro
+            </Button>
+          </Link>
+
+          {/* Novo Botão de Perfil */}
+          <Link href="/agente/perfil">
             <Button
               variant="ghost"
               size="sm"
-              className="text-slate-300 hover:text-white hover:bg-slate-800"
+              className="text-gray-600 hover:text-blue-600"
             >
-              Relatórios de produção{" "}
-              {relatorios.length > 0 ? `(${relatorios.length})` : ""}
+              Meu Perfil
             </Button>
           </Link>
 
-          <Link
-            href="/supervisor"
-            className="text-sm font-medium text-slate-300 hover:text-white p-2"
-          >
-            Visão Geral
-          </Link>
-          <Link href="/supervisor/form">
-            <Button variant="secondary" size="sm" className="w-full sm:w-auto">
-              Lançar Registro
-            </Button>
-          </Link>
-
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleSair}
-            className="text-slate-300 hover:text-white hover:bg-slate-800"
-          >
+          <Button variant="ghost" size="sm" onClick={handleSair}>
             Sair
           </Button>
         </nav>

@@ -37,9 +37,20 @@ export default function AgenteLayout({
           >
             Início
           </Link>
-          <Link href="/agente/form">
-            <Button variant="default" size="sm" className="w-full sm:w-auto">
+          <Link href="/agente/formulario">
+            <Button variant="outline" size="sm" className="w-full sm:w-auto">
               Novo Registro
+            </Button>
+          </Link>
+
+          {/* Novo Botão de Perfil */}
+          <Link href="/agente/perfil">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-gray-600 hover:text-blue-600"
+            >
+              Meu Perfil
             </Button>
           </Link>
 
