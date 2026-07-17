@@ -101,6 +101,17 @@ export default function SupervisorLayout({
             Meu perfil
           </Link>
 
+          {/* Novo Botão para Cadastrar Agente */}
+          <Link href="/supervisor/cadastrar_agente">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-slate-300 hover:text-white hover:bg-slate-800"
+            >
+              Cadastrar Agente
+            </Button>
+          </Link>
+
           <Button
             variant="destructive"
             size="sm"
