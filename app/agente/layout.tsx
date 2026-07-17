@@ -37,7 +37,7 @@ export default function AgenteLayout({
           >
             Início
           </Link>
-          <Link href="/agente/formulario">
+          <Link href="/agente/form">
             <Button variant="outline" size="sm" className="w-full sm:w-auto">
               Novo Registro
             </Button>

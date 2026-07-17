@@ -27,8 +27,6 @@ type Registro = {
   observacoes?: string | null;
   justificativaAusencia?: string | null;
   ausenciaJustificada?: boolean;
-  solicitacaoRelatorio?: boolean;
-  identificacaoRelatorio?: string | null;
   situacaoPreco?: string | null;
   tipoColeta?: string | null;
   clima?: string | null;
@@ -126,6 +124,9 @@ const construirMesVisao = (key: string, registrosDoAgente: Registro[]) => {
 export default function SupervisorDashboard() {
   const [agentes, setAgentes] = useState<Agente[]>([]);
   const [registros, setRegistros] = useState<Registro[]>([]);
+  // Novo estado para armazenar os relatórios de produção vinculados
+  const [relatoriosMap, setRelatoriosMap] = useState<Record<string, any>>({});
+
   const [loading, setLoading] = useState(true);
   const [termoPesquisa, setTermoPesquisa] = useState("");
   const [agenteSelecionado, setAgenteSelecionado] = useState<Agente | null>(
@@ -174,7 +175,8 @@ export default function SupervisorDashboard() {
 
     carregarDadosIniciais();
 
-    const unsubscribe = onSnapshot(
+    // Listener para a coleção principal (Registros Diários)
+    const unsubscribeRegistros = onSnapshot(
       collection(db, "registros_diarios"),
       (snapshot) => {
         const lista: Registro[] = [];
@@ -195,7 +197,22 @@ export default function SupervisorDashboard() {
       },
     );
 
-    return () => unsubscribe();
+    // Novo Listener para cruzar a coleção de Relatórios de Produção
+    const unsubscribeRelatorios = onSnapshot(
+      collection(db, "relatorios_producao"),
+      (snapshot) => {
+        const mapa: Record<string, any> = {};
+        snapshot.forEach((doc) => {
+          mapa[doc.id] = doc.data();
+        });
+        setRelatoriosMap(mapa);
+      },
+    );
+
+    return () => {
+      unsubscribeRegistros();
+      unsubscribeRelatorios();
+    };
   }, []);
 
   const agentesFiltrados = useMemo(() => {
@@ -275,23 +292,57 @@ export default function SupervisorDashboard() {
         );
       });
 
+      // O BOM (\uFEFF) avisa ao Excel que o arquivo é UTF-8, corrigindo a acentuação
+      const BOM = "\uFEFF";
+
       const linhas = [
-        "data,agente,status,houveDesembarque,monitoradas,naoMonitoradas,motivo,observacoes,justificativaAusencia",
+        "Data,Mês,Ano,Agente,Status,Houve Desembarque,Num de descargas,Num de monitoradas,Num de não monitoradas,Situação do Preço,Tipo de coleta,Clima,Interação com animais marinhos,Solicitação de relatórios,Motivo sem desembarque,Observações,Justificativa Ausência",
       ];
 
       registrosCsv.forEach((registro) => {
         const dataRegistro = registro.dataRegistro?.toDate();
+        let dataStr = "Sem data";
+        let mes = "";
+        let ano = "";
+
+        if (dataRegistro) {
+          dataStr = dataRegistro.toLocaleDateString("pt-BR");
+          mes = String(dataRegistro.getMonth() + 1).padStart(2, "0");
+          ano = String(dataRegistro.getFullYear());
+        }
+
+        const mon = registro.qtdMonitoradas || 0;
+        const naoMon = registro.qtdNaoMonitoradas || 0;
+        const totalDescargas = mon + naoMon;
+
+        let animais = "N/A";
+        if (registro.interacaoAnimais === "sim") animais = "Sim";
+        else if (registro.interacaoAnimais === "nao") animais = "Não";
+        else if (registro.interacaoAnimais === "sem_informacao")
+          animais = "Sem Informação";
+
+        // Verifica na coleção secundária se esse registro teve relatório de produção
+        const relatorioVinculado = relatoriosMap[registro.id];
+
         const linha = [
-          dataRegistro ? dataRegistro.toLocaleDateString("pt-BR") : "Sem data",
+          dataStr,
+          mes,
+          ano,
           agenteCsv?.nome || "Agente",
           registro.ausenciaJustificada
             ? "ausencia_justificada"
             : registro.registradoPorSupervisor
               ? "gerencial"
               : "agente",
-          registro.houveDesembarque ? "sim" : "nao",
-          registro.qtdMonitoradas ?? "",
-          registro.qtdNaoMonitoradas ?? "",
+          registro.houveDesembarque ? "Sim" : "Não",
+          totalDescargas,
+          mon,
+          naoMon,
+          registro.situacaoPreco || "N/A",
+          registro.tipoColeta || "N/A",
+          registro.clima || "N/A",
+          animais,
+          relatorioVinculado ? "Sim" : "Não", // Aqui aplicamos a correção!
           (registro.motivoSemDesembarque || "").replace(/\n/g, " "),
           (registro.observacoes || "").replace(/\n/g, " "),
           (registro.justificativaAusencia || "").replace(/\n/g, " "),
@@ -301,7 +352,7 @@ export default function SupervisorDashboard() {
         linhas.push(linha);
       });
 
-      const blob = new Blob([linhas.join("\n")], {
+      const blob = new Blob([BOM + linhas.join("\n")], {
         type: "text/csv;charset=utf-8;",
       });
       const url = URL.createObjectURL(blob);
@@ -588,9 +639,13 @@ export default function SupervisorDashboard() {
 
       {modalDetalhesAberto && diaSelecionado && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden">
-            <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex justify-between items-center">
-              <h3 className="font-bold text-slate-800">Detalhes do dia</h3>
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl overflow-hidden max-h-[90vh] flex flex-col">
+            <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex justify-between items-center shrink-0">
+              {/* CORREÇÃO APLICADA: Data visível no título do Modal */}
+              <h3 className="font-bold text-slate-800">
+                Detalhes do dia -{" "}
+                {diaSelecionado.data.split("-").reverse().join("/")}
+              </h3>
               <button
                 onClick={() => setModalDetalhesAberto(false)}
                 className="text-slate-500 hover:text-slate-800 text-xl font-bold px-2"
@@ -599,7 +654,7 @@ export default function SupervisorDashboard() {
               </button>
             </div>
 
-            <div className="p-4 space-y-4 text-sm">
+            <div className="p-4 space-y-4 text-sm overflow-y-auto">
               {!diaSelecionado.temRegistro ? (
                 <p className="text-slate-500 text-center py-4">
                   Nenhum registro encontrado para este dia.
@@ -647,6 +702,60 @@ export default function SupervisorDashboard() {
                     </div>
                   </div>
 
+                  {/* NOVOS DADOS EXIBIDOS NO MODAL: Cenário */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+                    <div className="rounded-lg border border-slate-200 p-3">
+                      <p className="text-slate-500">Situação do preço</p>
+                      <p className="font-semibold text-slate-800 mt-1 capitalize">
+                        {diaSelecionado.dadosRegistro?.situacaoPreco || "N/A"}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 p-3">
+                      <p className="text-slate-500">Tipo de coleta</p>
+                      <p className="font-semibold text-slate-800 mt-1 capitalize">
+                        {diaSelecionado.dadosRegistro?.tipoColeta || "N/A"}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 p-3">
+                      <p className="text-slate-500">Clima</p>
+                      <p className="font-semibold text-slate-800 mt-1">
+                        {diaSelecionado.dadosRegistro?.clima || "N/A"}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 p-3">
+                      <p className="text-slate-500">Interação com animais</p>
+                      <p className="font-semibold text-slate-800 mt-1 capitalize">
+                        {diaSelecionado.dadosRegistro?.interacaoAnimais ===
+                        "sem_informacao"
+                          ? "Sem Informação"
+                          : diaSelecionado.dadosRegistro?.interacaoAnimais ||
+                            "N/A"}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* NOVOS DADOS EXIBIDOS NO MODAL: Relatório de Produção */}
+                  <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 mt-3">
+                    <p className="text-blue-800 font-semibold mb-1">
+                      Solicitação de relatório de produção?
+                    </p>
+                    {relatoriosMap[diaSelecionado.dadosRegistro?.id || ""] ? (
+                      <>
+                        <p className="font-bold text-blue-900 mt-1">Sim</p>
+                        <p className="text-sm text-blue-700 mt-2">
+                          <span className="font-semibold">Identificação: </span>
+                          {
+                            relatoriosMap[
+                              diaSelecionado.dadosRegistro?.id || ""
+                            ].identificacaoRelatorio
+                          }
+                        </p>
+                      </>
+                    ) : (
+                      <p className="font-bold text-blue-900 mt-1">Não</p>
+                    )}
+                  </div>
+
                   {diaSelecionado.dadosRegistro?.justificativaAusencia && (
                     <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
                       <p className="text-amber-700 font-semibold">
@@ -669,7 +778,7 @@ export default function SupervisorDashboard() {
               )}
             </div>
 
-            <div className="px-4 py-3 bg-slate-50 border-t border-slate-200 flex justify-end">
+            <div className="px-4 py-3 bg-slate-50 border-t border-slate-200 flex justify-end shrink-0">
               <Button
                 variant="outline"
                 className="border-slate-200 text-slate-700"
