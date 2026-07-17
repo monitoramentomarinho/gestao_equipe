@@ -1,0 +1,766 @@
+﻿"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { db } from "@/lib/firebase";
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  onSnapshot,
+  Timestamp,
+} from "firebase/firestore";
+import { Button } from "@/components/ui/button";
+import { Info } from "lucide-react";
+
+type Agente = { id: string; nome: string; localidade: string };
+type Registro = {
+  id: string;
+  agenteId: string;
+  nome?: string;
+  dataRegistro?: Timestamp | null;
+  registradoPorSupervisor?: boolean;
+  houveDesembarque?: boolean;
+  qtdMonitoradas?: number | null;
+  qtdNaoMonitoradas?: number | null;
+  motivoSemDesembarque?: string | null;
+  observacoes?: string | null;
+  justificativaAusencia?: string | null;
+  ausenciaJustificada?: boolean;
+  solicitacaoRelatorio?: boolean;
+  identificacaoRelatorio?: string | null;
+  situacaoPreco?: string | null;
+  tipoColeta?: string | null;
+  clima?: string | null;
+  interacaoAnimais?: string | null;
+};
+type DiaCalendario = {
+  data: string;
+  diaTexto: string;
+  numero: number;
+  doMes: boolean;
+  temRegistro: boolean;
+  dadosRegistro?: Registro;
+};
+type SemanaMes = {
+  id: string;
+  label: string;
+  dias: DiaCalendario[];
+};
+type MesVisao = {
+  key: string;
+  label: string;
+  semanas: SemanaMes[];
+};
+
+const normalizarTexto = (valor: string) =>
+  valor
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+
+const construirMesVisao = (key: string, registrosDoAgente: Registro[]) => {
+  const [anoTexto, mesTexto] = key.split("-");
+  const ano = Number(anoTexto);
+  const mes = Number(mesTexto) - 1;
+  const inicioMes = new Date(ano, mes, 1);
+  const fimMes = new Date(ano, mes + 1, 0);
+  const inicioSemana = new Date(inicioMes);
+  const diff = inicioSemana.getDay() === 0 ? -6 : 1 - inicioSemana.getDay();
+  inicioSemana.setDate(inicioMes.getDate() + diff);
+
+  const semanas: SemanaMes[] = [];
+  const cursor = new Date(inicioSemana);
+  let semanaIndex = 1;
+
+  while (cursor <= fimMes || semanas.length < 6) {
+    const semana: DiaCalendario[] = [];
+    const semanaInicio = new Date(cursor);
+    const semanaFim = new Date(cursor);
+    semanaFim.setDate(semanaInicio.getDate() + 6);
+
+    for (let i = 0; i < 7; i += 1) {
+      const data = new Date(cursor);
+      const ehDoMes = data >= inicioMes && data <= fimMes;
+      const dataKey = `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, "0")}-${String(data.getDate()).padStart(2, "0")}`;
+      const registroDoDia = registrosDoAgente.find((item) => {
+        const dataItem = item.dataRegistro?.toDate();
+        if (!dataItem) return false;
+        const chaveItem = `${dataItem.getFullYear()}-${String(dataItem.getMonth() + 1).padStart(2, "0")}-${String(dataItem.getDate()).padStart(2, "0")}`;
+        return chaveItem === dataKey;
+      });
+
+      semana.push({
+        data: dataKey,
+        diaTexto: data.toLocaleDateString("pt-BR", { weekday: "short" }),
+        numero: data.getDate(),
+        doMes: ehDoMes,
+        temRegistro: Boolean(registroDoDia),
+        dadosRegistro: registroDoDia,
+      });
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    semanas.push({
+      id: `${key}-semana-${semanaIndex}`,
+      label: `Semana ${semanaIndex}`,
+      dias: semana,
+    });
+    semanaIndex += 1;
+
+    if (semanaFim >= fimMes && semanas.length > 1) break;
+  }
+
+  const label = inicioMes.toLocaleDateString("pt-BR", {
+    month: "long",
+    year: "numeric",
+  });
+
+  return {
+    key,
+    label: label.charAt(0).toUpperCase() + label.slice(1),
+    semanas,
+  } as MesVisao;
+};
+
+export default function SupervisorDashboard() {
+  const [agentes, setAgentes] = useState<Agente[]>([]);
+  const [registros, setRegistros] = useState<Registro[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [termoPesquisa, setTermoPesquisa] = useState("");
+  const [agenteSelecionado, setAgenteSelecionado] = useState<Agente | null>(
+    null,
+  );
+  const [modalDetalhesAberto, setModalDetalhesAberto] = useState(false);
+  const [diaSelecionado, setDiaSelecionado] = useState<DiaCalendario | null>(
+    null,
+  );
+  const [mesSelecionado, setMesSelecionado] = useState("");
+  const [semanaSelecionada, setSemanaSelecionada] = useState<SemanaMes | null>(
+    null,
+  );
+  const [modalCsvAberto, setModalCsvAberto] = useState(false);
+  const [csvAgenteId, setCsvAgenteId] = useState("");
+  const [csvDataInicio, setCsvDataInicio] = useState("");
+  const [csvDataFim, setCsvDataFim] = useState("");
+  const [csvGerando, setCsvGerando] = useState(false);
+  const [erroCsv, setErroCsv] = useState("");
+
+  useEffect(() => {
+    let agentesCarregados: Agente[] = [];
+
+    async function carregarDadosIniciais() {
+      try {
+        const qAgentes = query(
+          collection(db, "users"),
+          where("role", "==", "agente"),
+        );
+        const snapsAgentes = await getDocs(qAgentes);
+        const listaAgentes: Agente[] = [];
+        snapsAgentes.forEach((doc) => {
+          const dados = doc.data();
+          listaAgentes.push({
+            id: doc.id,
+            nome: dados.nome || "Agente sem nome",
+            localidade: dados.localidade || "Sem localidade",
+          });
+        });
+        agentesCarregados = listaAgentes;
+        setAgentes(listaAgentes);
+      } catch (err) {
+        console.error("Erro ao buscar agentes", err);
+      }
+    }
+
+    carregarDadosIniciais();
+
+    const unsubscribe = onSnapshot(
+      collection(db, "registros_diarios"),
+      (snapshot) => {
+        const lista: Registro[] = [];
+        snapshot.forEach((doc) => {
+          const dados = doc.data();
+          const agenteInfo = agentesCarregados.find(
+            (ag) => ag.id === dados.agenteId,
+          );
+          lista.push({
+            id: doc.id,
+            agenteId: dados.agenteId,
+            nome: agenteInfo ? agenteInfo.nome : "Agente não identificado",
+            ...dados,
+          } as Registro);
+        });
+        setRegistros(lista);
+        setLoading(false);
+      },
+    );
+
+    return () => unsubscribe();
+  }, []);
+
+  const agentesFiltrados = useMemo(() => {
+    if (!termoPesquisa.trim()) return [];
+    return agentes.filter((agente) =>
+      normalizarTexto(agente.nome).includes(normalizarTexto(termoPesquisa)),
+    );
+  }, [agentes, termoPesquisa]);
+
+  const registrosDoAgente = useMemo(() => {
+    if (!agenteSelecionado) return [];
+    return registros.filter(
+      (registro) => registro.agenteId === agenteSelecionado.id,
+    );
+  }, [agenteSelecionado, registros]);
+
+  const mesesDisponiveis = useMemo(() => {
+    const mapa = new Map<string, MesVisao>();
+
+    registrosDoAgente.forEach((registro) => {
+      const dataRegistro = registro.dataRegistro?.toDate();
+      if (!dataRegistro) return;
+
+      const ano = dataRegistro.getFullYear();
+      const mes = dataRegistro.getMonth();
+      const mesKey = `${ano}-${String(mes + 1).padStart(2, "0")}`;
+      if (!mapa.has(mesKey)) {
+        mapa.set(mesKey, construirMesVisao(mesKey, registrosDoAgente));
+      }
+    });
+
+    return Array.from(mapa.values()).sort((a, b) => a.key.localeCompare(b.key));
+  }, [registrosDoAgente]);
+
+  useEffect(() => {
+    if (!agenteSelecionado) {
+      setMesSelecionado("");
+      setSemanaSelecionada(null);
+      return;
+    }
+
+    if (!mesSelecionado) {
+      const mesPadrao =
+        mesesDisponiveis[0]?.key || new Date().toISOString().slice(0, 7);
+      setMesSelecionado(mesPadrao);
+    }
+  }, [agenteSelecionado, mesesDisponiveis, mesSelecionado]);
+
+  const mesAtivo = useMemo(() => {
+    if (!agenteSelecionado || !mesSelecionado) return null;
+    return construirMesVisao(mesSelecionado, registrosDoAgente);
+  }, [agenteSelecionado, mesSelecionado, registrosDoAgente]);
+
+  const abrirDetalhesDoDia = (dia: DiaCalendario) => {
+    setDiaSelecionado(dia);
+    setModalDetalhesAberto(true);
+  };
+
+  const gerarCsv = () => {
+    if (!csvAgenteId) {
+      setErroCsv("Selecione um agente antes de gerar o CSV.");
+      return;
+    }
+
+    setCsvGerando(true);
+    try {
+      const agenteCsv = agentes.find((agente) => agente.id === csvAgenteId);
+      const registrosCsv = registros.filter((registro) => {
+        const dataRegistro = registro.dataRegistro?.toDate();
+        if (!dataRegistro || registro.agenteId !== csvAgenteId) return false;
+        const inicio = csvDataInicio
+          ? new Date(`${csvDataInicio}T00:00:00`)
+          : null;
+        const fim = csvDataFim ? new Date(`${csvDataFim}T23:59:59`) : null;
+        return (
+          (!inicio || dataRegistro >= inicio) && (!fim || dataRegistro <= fim)
+        );
+      });
+
+      const linhas = [
+        "data,agente,status,houveDesembarque,monitoradas,naoMonitoradas,motivo,observacoes,justificativaAusencia",
+      ];
+
+      registrosCsv.forEach((registro) => {
+        const dataRegistro = registro.dataRegistro?.toDate();
+        const linha = [
+          dataRegistro ? dataRegistro.toLocaleDateString("pt-BR") : "Sem data",
+          agenteCsv?.nome || "Agente",
+          registro.ausenciaJustificada
+            ? "ausencia_justificada"
+            : registro.registradoPorSupervisor
+              ? "gerencial"
+              : "agente",
+          registro.houveDesembarque ? "sim" : "nao",
+          registro.qtdMonitoradas ?? "",
+          registro.qtdNaoMonitoradas ?? "",
+          (registro.motivoSemDesembarque || "").replace(/\n/g, " "),
+          (registro.observacoes || "").replace(/\n/g, " "),
+          (registro.justificativaAusencia || "").replace(/\n/g, " "),
+        ]
+          .map((valor) => `"${String(valor).replace(/"/g, '""')}"`)
+          .join(",");
+        linhas.push(linha);
+      });
+
+      const blob = new Blob([linhas.join("\n")], {
+        type: "text/csv;charset=utf-8;",
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      const nomeArquivo = (agenteCsv?.nome || "agente")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "_");
+      link.download = `relatorio_${nomeArquivo}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      setModalCsvAberto(false);
+      setErroCsv("");
+    } finally {
+      setCsvGerando(false);
+    }
+  };
+
+  const limparSelecao = () => {
+    setAgenteSelecionado(null);
+    setTermoPesquisa("");
+    setMesSelecionado("");
+    setSemanaSelecionada(null);
+  };
+
+  if (loading) {
+    return (
+      <div className="p-8 text-center text-slate-600">Carregando painel...</div>
+    );
+  }
+
+  return (
+    <main className="flex flex-col flex-1 p-4 sm:p-6 w-full max-w-6xl mx-auto gap-6">
+      <header className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 sm:p-6">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-800">
+              Supervisão de equipe
+            </h1>
+            <p className="text-sm text-slate-600 mt-1">
+              Busque pelo nome do agente, acompanhe suas semanas e exporte os
+              registros em CSV.
+            </p>
+          </div>
+
+          <Button
+            className="bg-emerald-600 hover:bg-emerald-700"
+            onClick={() => {
+              setCsvAgenteId(agenteSelecionado?.id || "");
+              setCsvDataInicio("");
+              setCsvDataFim("");
+              setErroCsv("");
+              setModalCsvAberto(true);
+            }}
+          >
+            Gerar CSV
+          </Button>
+        </div>
+
+        <div className="mt-5 space-y-2">
+          <label className="text-sm font-semibold text-slate-700">
+            Buscar agente
+          </label>
+          <input
+            value={termoPesquisa}
+            onChange={(event) => setTermoPesquisa(event.target.value)}
+            placeholder="Digite o nome do agente"
+            className="w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800"
+          />
+        </div>
+
+        {termoPesquisa && (
+          <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
+            {agentesFiltrados.length === 0 ? (
+              <p className="text-sm text-slate-500">
+                Nenhum agente encontrado com esse nome.
+              </p>
+            ) : (
+              agentesFiltrados.map((agente) => (
+                <button
+                  key={agente.id}
+                  onClick={() => {
+                    setAgenteSelecionado(agente);
+                    setTermoPesquisa(agente.nome);
+                    setMesSelecionado("");
+                    setSemanaSelecionada(null);
+                  }}
+                  className="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-700 shadow-sm"
+                >
+                  <span>{agente.nome}</span>
+                  <span className="text-xs text-slate-500">
+                    {agente.localidade}
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+        )}
+      </header>
+
+      {agenteSelecionado && (
+        <>
+          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-slate-800">
+                  {agenteSelecionado.nome}
+                </h2>
+                <p className="text-sm text-slate-500">
+                  {agenteSelecionado.localidade}
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                className="border-slate-200 text-slate-700"
+                onClick={limparSelecao}
+              >
+                Trocar agente
+              </Button>
+            </div>
+          </section>
+
+          <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="text-sm font-semibold text-slate-500">
+                Registros do agente
+              </p>
+              <p className="text-3xl font-black text-slate-800 mt-2">
+                {registrosDoAgente.length}
+              </p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="text-sm font-semibold text-slate-500">
+                Meses disponíveis
+              </p>
+              <p className="text-3xl font-black text-slate-800 mt-2">
+                {mesesDisponiveis.length}
+              </p>
+            </div>
+          </section>
+
+          <section className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h3 className="text-lg font-bold text-slate-800">
+                  Meses e semanas
+                </h3>
+                <p className="text-sm text-slate-500">
+                  Selecione um mês e depois uma semana para ver os detalhes.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex flex-wrap gap-2">
+                {mesesDisponiveis.map((mes) => (
+                  <button
+                    key={mes.key}
+                    onClick={() => {
+                      setMesSelecionado(mes.key);
+                      setSemanaSelecionada(null);
+                    }}
+                    className={`rounded-full border px-3 py-2 text-sm font-medium ${mes.key === mesSelecionado ? "bg-slate-800 text-white border-slate-800" : "border-slate-200 text-slate-700 bg-white"}`}
+                  >
+                    Mês atual
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-center">
+                <label className="text-sm font-semibold text-slate-700">
+                  Buscar outro mês:
+                </label>
+                <input
+                  type="month"
+                  value={mesSelecionado}
+                  onChange={(event) => {
+                    setMesSelecionado(event.target.value);
+                    setSemanaSelecionada(null);
+                  }}
+                  className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800"
+                />
+              </div>
+            </div>
+
+            {mesAtivo && (
+              <div className="mt-5 grid gap-3 md:grid-cols-2">
+                {mesAtivo.semanas.map((semana) => (
+                  <button
+                    key={semana.id}
+                    onClick={() => setSemanaSelecionada(semana)}
+                    className={`rounded-xl border p-4 text-left transition ${semanaSelecionada?.id === semana.id ? "border-slate-800 bg-slate-50 shadow-sm" : "border-slate-200 bg-white"}`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-slate-800">
+                        {semana.label}
+                      </span>
+                      <span className="text-sm text-slate-500">
+                        {semana.dias.filter((dia) => dia.temRegistro).length}{" "}
+                        dias com registro
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+
+          {semanaSelecionada && (
+            <section className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-bold text-slate-800">
+                    {semanaSelecionada.label}
+                  </h3>
+                  <p className="text-sm text-slate-500">
+                    Status diário da semana selecionada.
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  className="border-slate-200 text-slate-700"
+                  onClick={() => setSemanaSelecionada(null)}
+                >
+                  Ocultar semana
+                </Button>
+              </div>
+
+              <div
+                className=" flex-auto quero que os itens preencham a div toda, porem responsiva
+                grid grid-cols-3 gap-3 mt-4 sm:grid-cols-4 md:grid-cols-7"
+              >
+                {semanaSelecionada.dias.map((dia) => {
+                  const registro = dia.dadosRegistro;
+                  const temAusenciaJustificada =
+                    !!registro?.ausenciaJustificada;
+                  let bolinhaClass =
+                    "bg-red-100 text-red-700 border border-red-200";
+                  let icone = "!";
+
+                  if (temAusenciaJustificada) {
+                    bolinhaClass =
+                      "bg-yellow-100 text-yellow-700 border border-yellow-300";
+                    icone = "!";
+                  } else if (dia.temRegistro) {
+                    bolinhaClass =
+                      "bg-emerald-100 text-emerald-700 border border-emerald-200";
+                    icone = "✓";
+                  }
+
+                  return (
+                    <button
+                      key={dia.data}
+                      onClick={() => abrirDetalhesDoDia(dia)}
+                      className="flex flex-col items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-3 text-center shadow-sm"
+                    >
+                      <span
+                        className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold ${bolinhaClass}`}
+                      >
+                        {icone}
+                      </span>
+                      <span className="text-sm font-semibold text-slate-700">
+                        {dia.numero}
+                      </span>
+                      <span className="text-[11px] text-slate-500">
+                        {dia.diaTexto}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+        </>
+      )}
+
+      {!agenteSelecionado && (
+        <section className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-slate-500">
+          Digite o nome de um agente para visualizar suas semanas e registros.
+        </section>
+      )}
+
+      {modalDetalhesAberto && diaSelecionado && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden">
+            <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex justify-between items-center">
+              <h3 className="font-bold text-slate-800">Detalhes do dia</h3>
+              <button
+                onClick={() => setModalDetalhesAberto(false)}
+                className="text-slate-500 hover:text-slate-800 text-xl font-bold px-2"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4 text-sm">
+              {!diaSelecionado.temRegistro ? (
+                <p className="text-slate-500 text-center py-4">
+                  Nenhum registro encontrado para este dia.
+                </p>
+              ) : (
+                <>
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-slate-600">Status</p>
+                    <p className="font-semibold text-slate-800 mt-1">
+                      {diaSelecionado.dadosRegistro?.ausenciaJustificada
+                        ? "Ausência justificada"
+                        : diaSelecionado.dadosRegistro?.registradoPorSupervisor
+                          ? "Registro gerencial"
+                          : "Registro do agente"}
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="rounded-lg border border-slate-200 p-3">
+                      <p className="text-slate-500">Houve desembarque?</p>
+                      <p className="font-semibold text-slate-800 mt-1">
+                        {diaSelecionado.dadosRegistro?.houveDesembarque
+                          ? "Sim"
+                          : "Não"}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 p-3">
+                      <p className="text-slate-500">Monitoradas</p>
+                      <p className="font-semibold text-slate-800 mt-1">
+                        {diaSelecionado.dadosRegistro?.qtdMonitoradas ?? "-"}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 p-3">
+                      <p className="text-slate-500">Não monitoradas</p>
+                      <p className="font-semibold text-slate-800 mt-1">
+                        {diaSelecionado.dadosRegistro?.qtdNaoMonitoradas ?? "-"}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 p-3">
+                      <p className="text-slate-500">Motivo</p>
+                      <p className="font-semibold text-slate-800 mt-1">
+                        {diaSelecionado.dadosRegistro?.motivoSemDesembarque ||
+                          "-"}
+                      </p>
+                    </div>
+                  </div>
+
+                  {diaSelecionado.dadosRegistro?.justificativaAusencia && (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                      <p className="text-amber-700 font-semibold">
+                        Justificativa da ausência
+                      </p>
+                      <p className="text-slate-700 mt-1">
+                        {diaSelecionado.dadosRegistro.justificativaAusencia}
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="rounded-lg border border-slate-200 p-3">
+                    <p className="text-slate-500">Observações</p>
+                    <p className="font-semibold text-slate-800 mt-1">
+                      {diaSelecionado.dadosRegistro?.observacoes ||
+                        "Sem observações"}
+                    </p>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="px-4 py-3 bg-slate-50 border-t border-slate-200 flex justify-end">
+              <Button
+                variant="outline"
+                className="border-slate-200 text-slate-700"
+                onClick={() => setModalDetalhesAberto(false)}
+              >
+                Fechar
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modalCsvAberto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
+            <div className="bg-slate-50 px-4 py-3 border-b border-slate-200">
+              <h3 className="font-bold text-slate-800">
+                Exportar relatório CSV
+              </h3>
+            </div>
+
+            <div className="p-4 space-y-4 text-sm">
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-slate-700">
+                  Agente
+                </label>
+                <select
+                  value={csvAgenteId}
+                  onChange={(event) => setCsvAgenteId(event.target.value)}
+                  className="w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800"
+                >
+                  <option value="">Selecione um agente</option>
+                  {agentes.map((agente) => (
+                    <option key={agente.id} value={agente.id}>
+                      {agente.nome}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-slate-700">
+                    Data inicial
+                  </label>
+                  <input
+                    type="date"
+                    value={csvDataInicio}
+                    onChange={(event) => setCsvDataInicio(event.target.value)}
+                    className="w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-slate-700">
+                    Data final
+                  </label>
+                  <input
+                    type="date"
+                    value={csvDataFim}
+                    onChange={(event) => setCsvDataFim(event.target.value)}
+                    className="w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800"
+                  />
+                </div>
+              </div>
+              <span className="text-xs text-slate-500 flex items-center gap-2">
+                <Info className="w-3" />
+                Para obter todos os registros, mantenha as datas em branco.
+              </span>
+
+              {erroCsv && <p className="text-sm text-red-600">{erroCsv}</p>}
+            </div>
+
+            <div className="px-4 py-3 bg-slate-50 border-t border-slate-200 flex flex-wrap justify-end gap-2">
+              <Button
+                variant="outline"
+                className="border-slate-200 text-slate-700"
+                onClick={() => setModalCsvAberto(false)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                className="bg-emerald-600 hover:bg-emerald-700"
+                onClick={gerarCsv}
+                disabled={csvGerando}
+              >
+                {csvGerando ? "Gerando..." : "Gerar CSV"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </main>
+  );
+}
