@@ -44,7 +44,7 @@ export default function AgenteLayout({
           </Link>
 
           {/* Novo Botão de Perfil */}
-          <Link href="/agente/perfil">
+          <Link href="/perfil">
             <Button
               variant="ghost"
               size="sm"

@@ -5,8 +5,11 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { auth } from "@/lib/firebase";
 import { updatePassword } from "firebase/auth";
+import { useRouter } from "next/navigation";
 
-export default function PerfilAgente() {
+export default function PerfilGlobal() {
+  const router = useRouter();
+
   const [novaSenha, setNovaSenha] = useState("");
   const [confirmarSenha, setConfirmarSenha] = useState("");
 
@@ -20,7 +23,6 @@ export default function PerfilAgente() {
     setSucesso(false);
     setLoading(true);
 
-    // Validações básicas
     if (novaSenha.length < 6) {
       setErro("A nova senha deve ter pelo menos 6 caracteres.");
       setLoading(false);
@@ -35,27 +37,18 @@ export default function PerfilAgente() {
 
     try {
       const user = auth.currentUser;
+      if (!user) throw new Error("Usuário não está logado.");
 
-      if (!user) {
-        throw new Error("Usuário não está logado.");
-      }
-
-      // Função nativa do Firebase para atualizar a senha
       await updatePassword(user, novaSenha);
 
       setNovaSenha("");
       setConfirmarSenha("");
       setSucesso(true);
-
-      // Esconde a mensagem de sucesso após 4 segundos
-      setTimeout(() => setSucesso(false), 4000);
     } catch (err: any) {
       console.error(err);
-
-      // O Firebase exige que o usuário tenha feito login recentemente para mudar a senha
       if (err.code === "auth/requires-recent-login") {
         setErro(
-          "Para sua segurança, você precisa sair do sistema (Logout) e fazer login novamente antes de alterar a senha.",
+          "Por segurança, você precisa sair do sistema e fazer login novamente antes de alterar a senha.",
         );
       } else {
         setErro("Ocorreu um erro ao atualizar a senha. Tente novamente.");
@@ -66,29 +59,22 @@ export default function PerfilAgente() {
   }
 
   return (
-    <main className="flex flex-col flex-1 p-4 sm:p-6 w-full max-w-xl mx-auto">
-      <header className="mb-6">
-        <h1 className="text-2xl sm:text-3xl font-bold text-gray-800">
-          Meu Perfil
-        </h1>
-        <p className="text-sm sm:text-base text-gray-600">
-          Atualize suas credenciais de acesso ao sistema.
-        </p>
-      </header>
-
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-        <h2 className="text-lg font-semibold text-gray-800 mb-4 border-b pb-2">
-          Alterar Senha
-        </h2>
+    <main className="flex flex-1 items-center justify-center p-4 min-h-screen bg-slate-50">
+      <div className="w-full max-w-md p-8 space-y-6 bg-white rounded-xl shadow-lg border border-slate-200 animate-in fade-in zoom-in-95">
+        <div className="text-center space-y-2">
+          <h1 className="text-2xl font-bold text-slate-800">
+            Segurança da Conta
+          </h1>
+          <p className="text-sm text-slate-500">
+            Defina sua nova senha de acesso.
+          </p>
+        </div>
 
         <form onSubmit={handleAlterarSenha} className="space-y-4">
           <div className="space-y-2">
-            <label className="text-sm font-medium text-gray-700">
-              Nova Senha
-            </label>
             <Input
               type="password"
-              placeholder="Digite a nova senha"
+              placeholder="Nova senha"
               value={novaSenha}
               onChange={(e) => setNovaSenha(e.target.value)}
               required
@@ -96,12 +82,9 @@ export default function PerfilAgente() {
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium text-gray-700">
-              Confirmar Nova Senha
-            </label>
             <Input
               type="password"
-              placeholder="Repita a nova senha"
+              placeholder="Confirme a nova senha"
               value={confirmarSenha}
               onChange={(e) => setConfirmarSenha(e.target.value)}
               required
@@ -109,18 +92,30 @@ export default function PerfilAgente() {
           </div>
 
           {erro && (
-            <p className="text-sm font-medium text-destructive">{erro}</p>
+            <p className="text-sm font-medium text-destructive text-center p-2 bg-red-50 rounded-md border border-red-100">
+              {erro}
+            </p>
           )}
           {sucesso && (
-            <div className="p-3 bg-green-50 text-green-700 text-sm font-medium rounded-md border border-green-200 text-center">
-              Sua senha foi alterada com sucesso!
-            </div>
+            <p className="text-sm font-medium text-green-700 text-center p-2 bg-green-50 rounded-md border border-green-200">
+              Senha alterada com sucesso!
+            </p>
           )}
 
-          <Button type="submit" className="w-full mt-4" disabled={loading}>
-            {loading ? "Atualizando..." : "Atualizar Senha"}
+          <Button type="submit" className="w-full h-11" disabled={loading}>
+            {loading ? "Processando..." : "Atualizar Senha"}
           </Button>
         </form>
+
+        <div className="text-center mt-4">
+          <button
+            type="button"
+            onClick={() => router.back()}
+            className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors"
+          >
+            Voltar para o Painel
+          </button>
+        </div>
       </div>
     </main>
   );
