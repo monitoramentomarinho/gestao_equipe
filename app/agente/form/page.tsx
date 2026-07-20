@@ -173,7 +173,7 @@ function FormularioConteudo() {
       if (!user) throw new Error("Usuário não autenticado");
 
       // Objeto base da Coleção Principal (repare que retiramos os dados do relatório daqui)
-      const dadosRegistro: any = {
+      const dadosRegistro: Record<string, unknown> = {
         agenteId: user.uid,
         houveDesembarque: houveDesembarque === "sim",
         situacaoPreco,

@@ -44,9 +44,13 @@ export default function PerfilGlobal() {
       setNovaSenha("");
       setConfirmarSenha("");
       setSucesso(true);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      if (err.code === "auth/requires-recent-login") {
+      const errorCode =
+        typeof err === "object" && err !== null && "code" in err
+          ? (err as { code?: string }).code
+          : undefined;
+      if (errorCode === "auth/requires-recent-login") {
         setErro(
           "Por segurança, você precisa sair do sistema e fazer login novamente antes de alterar a senha.",
         );

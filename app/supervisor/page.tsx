@@ -124,8 +124,9 @@ const construirMesVisao = (key: string, registrosDoAgente: Registro[]) => {
 export default function SupervisorDashboard() {
   const [agentes, setAgentes] = useState<Agente[]>([]);
   const [registros, setRegistros] = useState<Registro[]>([]);
-  // Novo estado para armazenar os relatórios de produção vinculados
-  const [relatoriosMap, setRelatoriosMap] = useState<Record<string, any>>({});
+  const [relatoriosMap, setRelatoriosMap] = useState<
+    Record<string, { identificacaoRelatorio?: string }>
+  >({});
 
   const [loading, setLoading] = useState(true);
   const [termoPesquisa, setTermoPesquisa] = useState("");
@@ -201,9 +202,15 @@ export default function SupervisorDashboard() {
     const unsubscribeRelatorios = onSnapshot(
       collection(db, "relatorios_producao"),
       (snapshot) => {
-        const mapa: Record<string, any> = {};
+        const mapa: Record<string, { identificacaoRelatorio?: string }> = {};
         snapshot.forEach((doc) => {
-          mapa[doc.id] = doc.data();
+          const dados = doc.data();
+          mapa[doc.id] = {
+            identificacaoRelatorio:
+              typeof dados.identificacaoRelatorio === "string"
+                ? dados.identificacaoRelatorio
+                : undefined,
+          };
         });
         setRelatoriosMap(mapa);
       },
@@ -247,24 +254,12 @@ export default function SupervisorDashboard() {
     return Array.from(mapa.values()).sort((a, b) => a.key.localeCompare(b.key));
   }, [registrosDoAgente]);
 
-  useEffect(() => {
-    if (!agenteSelecionado) {
-      setMesSelecionado("");
-      setSemanaSelecionada(null);
-      return;
-    }
-
-    if (!mesSelecionado) {
-      const mesPadrao =
-        mesesDisponiveis[0]?.key || new Date().toISOString().slice(0, 7);
-      setMesSelecionado(mesPadrao);
-    }
-  }, [agenteSelecionado, mesesDisponiveis, mesSelecionado]);
+  const mesSelecionadoAtivo = mesSelecionado || mesesDisponiveis[0]?.key || "";
 
   const mesAtivo = useMemo(() => {
-    if (!agenteSelecionado || !mesSelecionado) return null;
-    return construirMesVisao(mesSelecionado, registrosDoAgente);
-  }, [agenteSelecionado, mesSelecionado, registrosDoAgente]);
+    if (!agenteSelecionado || !mesSelecionadoAtivo) return null;
+    return construirMesVisao(mesSelecionadoAtivo, registrosDoAgente);
+  }, [agenteSelecionado, mesSelecionadoAtivo, registrosDoAgente]);
 
   const abrirDetalhesDoDia = (dia: DiaCalendario) => {
     setDiaSelecionado(dia);
@@ -517,7 +512,7 @@ export default function SupervisorDashboard() {
                       setMesSelecionado(mes.key);
                       setSemanaSelecionada(null);
                     }}
-                    className={`rounded-full border px-3 py-2 text-sm font-medium ${mes.key === mesSelecionado ? "bg-slate-800 text-white border-slate-800" : "border-slate-200 text-slate-700 bg-white"}`}
+                    className={`rounded-full border px-3 py-2 text-sm font-medium ${mes.key === mesSelecionadoAtivo ? "bg-slate-800 text-white border-slate-800" : "border-slate-200 text-slate-700 bg-white"}`}
                   >
                     Mês atual
                   </button>
@@ -530,7 +525,7 @@ export default function SupervisorDashboard() {
                 </label>
                 <input
                   type="month"
-                  value={mesSelecionado}
+                  value={mesSelecionadoAtivo}
                   onChange={(event) => {
                     setMesSelecionado(event.target.value);
                     setSemanaSelecionada(null);

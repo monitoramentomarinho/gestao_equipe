@@ -13,11 +13,27 @@ import { onAuthStateChanged } from "firebase/auth";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
+type RegistroDiario = {
+  id: string;
+  houveDesembarque?: boolean;
+  qtdMonitoradas?: number;
+  qtdNaoMonitoradas?: number;
+  ausenciaJustificada?: boolean;
+  motivoSemDesembarque?: string;
+  observacoes?: string;
+  situacaoPreco?: string;
+  tipoColeta?: string;
+  clima?: string;
+  interacaoAnimais?: string;
+  solicitacaoRelatorio?: boolean;
+  identificacaoRelatorio?: string;
+};
+
 type DiaSemana = {
   data: string;
   diaTexto: string;
   temRegistro: boolean;
-  dadosRegistro?: any;
+  dadosRegistro?: RegistroDiario | null;
 };
 
 export default function AgenteDashboard() {
@@ -28,17 +44,6 @@ export default function AgenteDashboard() {
 
   const [modalAberto, setModalAberto] = useState(false);
   const [diaSelecionado, setDiaSelecionado] = useState<DiaSemana | null>(null);
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        await carregarDadosDashboard(user.uid);
-      } else {
-        setLoading(false);
-      }
-    });
-    return () => unsubscribe();
-  }, []);
 
   async function carregarDadosDashboard(userId: string) {
     try {
@@ -72,18 +77,21 @@ export default function AgenteDashboard() {
 
       let monitoradas = 0;
       let naoMonitoradas = 0;
-      const registrosPorData: Record<string, any> = {};
+      const registrosPorData: Record<string, RegistroDiario> = {};
 
       querySnapshot.forEach((docSnap) => {
         const dados = docSnap.data();
-        const dataRegistroDB: Timestamp = dados.dataRegistro;
+        const dataRegistroDB = dados.dataRegistro as Timestamp | undefined;
         if (!dataRegistroDB) return;
 
         const dataObj = dataRegistroDB.toDate();
 
         if (dataObj >= segunda) {
           const dataString = dataObj.toISOString().split("T")[0];
-          registrosPorData[dataString] = { id: docSnap.id, ...dados };
+          registrosPorData[dataString] = {
+            id: docSnap.id,
+            ...dados,
+          } as RegistroDiario;
 
           if (dados.houveDesembarque) {
             monitoradas += dados.qtdMonitoradas || 0;
@@ -116,6 +124,17 @@ export default function AgenteDashboard() {
       setLoading(false);
     }
   }
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        await carregarDadosDashboard(user.uid);
+      } else {
+        setLoading(false);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
   function handleCliqueDia(dia: DiaSemana) {
     setDiaSelecionado(dia);
@@ -234,7 +253,7 @@ export default function AgenteDashboard() {
 
             {/* Corpo do Pop-up com rolagem máxima para mobile */}
             <div className="p-4 overflow-y-auto max-h-[60vh]">
-              {!diaSelecionado.temRegistro ? (
+              {!diaSelecionado.temRegistro || !diaSelecionado.dadosRegistro ? (
                 <p className="text-gray-500 text-center py-4">
                   Nenhum registro foi enviado neste dia.
                 </p>
@@ -344,7 +363,7 @@ export default function AgenteDashboard() {
                         Observações:
                       </span>
                       <p className="text-gray-700 italic text-xs bg-yellow-50 p-2 rounded border border-yellow-100">
-                        "{diaSelecionado.dadosRegistro.observacoes}"
+                        “{diaSelecionado.dadosRegistro.observacoes}”
                       </p>
                     </div>
                   )}
@@ -353,7 +372,7 @@ export default function AgenteDashboard() {
             </div>
 
             <div className="px-4 py-3 bg-gray-50 border-t flex justify-between items-center">
-              {diaSelecionado.temRegistro ? (
+              {diaSelecionado.temRegistro && diaSelecionado.dadosRegistro ? (
                 <Link
                   href={`/agente/form?id=${diaSelecionado.dadosRegistro.id}`}
                 >

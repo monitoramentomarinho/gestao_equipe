@@ -11,6 +11,14 @@ import {
 } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 
+const getErrorCode = (err: unknown): string | undefined => {
+  if (typeof err === "object" && err !== null && "code" in err) {
+    const code = (err as { code?: unknown }).code;
+    return typeof code === "string" ? code : undefined;
+  }
+  return undefined;
+};
+
 export default function Home() {
   const router = useRouter();
 
@@ -43,9 +51,10 @@ export default function Home() {
 
       const { role } = snap.data();
       router.push(role === "supervisor" ? "/supervisor" : "/agente");
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      if (err.code === "auth/invalid-credential") {
+      const errorCode = getErrorCode(err);
+      if (errorCode === "auth/invalid-credential") {
         setErro("E-mail ou senha inválidos.");
       } else {
         setErro("Ocorreu um erro ao tentar fazer login.");
@@ -77,11 +86,12 @@ export default function Home() {
         setSucesso("");
         setIsRecuperando(false);
       }, 5000);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      if (err.code === "auth/invalid-email") {
+      const errorCode = getErrorCode(err);
+      if (errorCode === "auth/invalid-email") {
         setErro("Formato de e-mail inválido.");
-      } else if (err.code === "auth/user-not-found") {
+      } else if (errorCode === "auth/user-not-found") {
         setErro("Não há usuário cadastrado com este e-mail.");
       } else {
         setErro("Erro ao enviar o e-mail de recuperação.");

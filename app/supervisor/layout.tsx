@@ -4,28 +4,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 import { signOut } from "firebase/auth";
-import { auth, db } from "@/lib/firebase";
-import { collection, onSnapshot, Timestamp } from "firebase/firestore";
-import { useEffect, useState } from "react";
-
-type RelatorioProducao = {
-  id: string;
-  agenteNome: string;
-  identificacao: string;
-  dataRegistro?: Timestamp | null;
-};
-
-const formatarData = (valor?: Timestamp | null) => {
-  if (!valor) return "Sem data";
-  const data = valor.toDate();
-  return data.toLocaleString("pt-BR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-};
+import { auth } from "@/lib/firebase";
 
 export default function SupervisorLayout({
   children,
@@ -33,36 +12,6 @@ export default function SupervisorLayout({
   children: React.ReactNode;
 }) {
   const router = useRouter();
-  const [relatorios, setRelatorios] = useState<RelatorioProducao[]>([]);
-
-  useEffect(() => {
-    const unsubscribe = onSnapshot(
-      collection(db, "registros_diarios"),
-      (snapshot) => {
-        const lista: RelatorioProducao[] = [];
-        snapshot.forEach((doc) => {
-          const dados = doc.data();
-          if (!dados.solicitacaoRelatorio) return;
-          lista.push({
-            id: doc.id,
-            agenteNome: dados.agenteNome || "Agente",
-            identificacao:
-              dados.identificacaoRelatorio || "Identificação não informada",
-            dataRegistro: dados.dataRegistro,
-          });
-        });
-        setRelatorios(
-          lista.sort(
-            (a, b) =>
-              (b.dataRegistro?.toDate().getTime() || 0) -
-              (a.dataRegistro?.toDate().getTime() || 0),
-          ),
-        );
-      },
-    );
-
-    return () => unsubscribe();
-  }, []);
 
   async function handleSair() {
     try {

@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { db } from "@/lib/firebase";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
-import { initializeApp, getApps, getApp } from "firebase/app";
+import { initializeApp, getApps } from "firebase/app";
 import {
   getAuth,
   createUserWithEmailAndPassword,
@@ -83,11 +83,15 @@ export default function CadastrarAgente() {
 
       // Remove a mensagem de sucesso após 5 segundos
       setTimeout(() => setSucesso(""), 5000);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      if (err.code === "auth/email-already-in-use") {
+      const errorCode =
+        typeof err === "object" && err !== null && "code" in err
+          ? (err as { code?: string }).code
+          : undefined;
+      if (errorCode === "auth/email-already-in-use") {
         setErro("Este e-mail já está cadastrado no sistema.");
-      } else if (err.code === "auth/invalid-email") {
+      } else if (errorCode === "auth/invalid-email") {
         setErro("Formato de e-mail inválido.");
       } else {
         setErro(

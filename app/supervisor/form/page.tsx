@@ -72,7 +72,7 @@ export default function FormularioSupervisor() {
       }
 
       const dataParaSalvar = new Date(`${dataRegistro}T12:00:00`);
-      const dadosRegistro: any = {
+      const dadosRegistro: Record<string, unknown> = {
         agenteId: agenteSelecionado,
         registradoPorSupervisor: true,
         supervisorId: usuario.uid,
