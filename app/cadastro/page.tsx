@@ -21,6 +21,7 @@ function FormularioCadastro() {
 
   const [conviteValido, setConviteValido] = useState<boolean | null>(null);
   const [localidadeDefinida, setLocalidadeDefinida] = useState("");
+  const [roleDefinida, setRoleDefinida] = useState("agente");
 
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
@@ -29,7 +30,6 @@ function FormularioCadastro() {
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState("");
 
-  // Valida o link assim que a página abre
   useEffect(() => {
     async function validarToken() {
       if (!token) {
@@ -40,9 +40,11 @@ function FormularioCadastro() {
         const snap = await getDoc(doc(db, "convites", token));
         if (snap.exists() && snap.data().ativo === true) {
           setLocalidadeDefinida(snap.data().localidade);
+          // Caso existam convites velhos sem role, o padrão será "agente"
+          setRoleDefinida(snap.data().role || "agente");
           setConviteValido(true);
         } else {
-          setConviteValido(false); // Token não existe ou já foi usado
+          setConviteValido(false);
         }
       } catch (err) {
         setConviteValido(false);
@@ -63,27 +65,29 @@ function FormularioCadastro() {
     }
 
     try {
-      // 1. Cria a conta no Firebase Auth (o agente já fica logado automaticamente aqui)
       const cred = await createUserWithEmailAndPassword(auth, email, senha);
 
-      // 2. Salva o perfil do agente no Firestore associado à localidade do convite
+      // Salva o perfil definindo a role dinâmica (agente ou supervisor)
       await setDoc(doc(db, "users", cred.user.uid), {
         nome: nome.trim(),
         email: email.trim(),
         localidade: localidadeDefinida,
-        role: "agente",
+        role: roleDefinida,
         dataCriacao: serverTimestamp(),
       });
 
-      // 3. Queima o convite para não ser usado novamente
       await updateDoc(doc(db, "convites", token!), {
         ativo: false,
         usadoPor: email,
         usadoEm: serverTimestamp(),
       });
 
-      // 4. Manda o agente direto para o painel de trabalho dele
-      router.push("/agente");
+      // Direciona para o painel correto com base no nível de acesso
+      if (roleDefinida === "supervisor") {
+        router.push("/supervisor");
+      } else {
+        router.push("/agente");
+      }
     } catch (err: any) {
       console.error(err);
       if (err.code === "auth/email-already-in-use") {
@@ -95,7 +99,6 @@ function FormularioCadastro() {
     }
   }
 
-  // Telas de carregamento e erro do token
   if (conviteValido === null)
     return (
       <div className="p-10 text-center">Verificando link de convite...</div>
@@ -109,13 +112,12 @@ function FormularioCadastro() {
           </h1>
           <p className="text-slate-600">
             Este link de cadastro não existe ou já foi utilizado por outra
-            pessoa. Solicite um novo link ao seu supervisor.
+            pessoa. Solicite um novo link.
           </p>
         </div>
       </div>
     );
 
-  // Formulário principal
   return (
     <div className="flex flex-1 items-center justify-center p-4 min-h-screen bg-blue-50">
       <div className="w-full max-w-md p-8 bg-white rounded-xl shadow-lg border border-blue-100 animate-in fade-in zoom-in-95">
@@ -124,9 +126,9 @@ function FormularioCadastro() {
             Finalizar Cadastro
           </h1>
           <p className="text-sm text-gray-500">
-            Você foi convidado(a) para atuar em{" "}
-            <strong className="text-blue-600">{localidadeDefinida}</strong>.
-            Crie sua credencial de acesso.
+            Você foi convidado(a) para atuar na localidade:{" "}
+            <strong className="text-blue-600">{localidadeDefinida}</strong>
+            {roleDefinida === "supervisor" && " (Acesso Gerencial)"}.
           </p>
         </div>
 

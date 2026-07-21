@@ -7,12 +7,23 @@ import { db } from "@/lib/firebase";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 
 export default function GerarConviteAgente() {
+  const [role, setRole] = useState("agente");
   const [localidade, setLocalidade] = useState("");
   const [nomeReferencia, setNomeReferencia] = useState("");
 
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState("");
   const [linkGerado, setLinkGerado] = useState("");
+
+  // Auto-preenche a localidade quando muda o nível de acesso
+  function handleMudancaRole(novaRole: string) {
+    setRole(novaRole);
+    if (novaRole === "supervisor") {
+      setLocalidade("PMCAP");
+    } else if (localidade === "PMCAP") {
+      setLocalidade("");
+    }
+  }
 
   async function handleGerarLink(e: React.FormEvent) {
     e.preventDefault();
@@ -21,10 +32,11 @@ export default function GerarConviteAgente() {
     setLoading(true);
 
     try {
-      // 1. Cria o convite no banco de dados
+      // 1. Cria o convite no banco de dados com a role definida
       const conviteRef = await addDoc(collection(db, "convites"), {
+        role: role,
         localidade: localidade.trim(),
-        nomeReferencia: nomeReferencia.trim(), // Apenas para controle interno (ex: "Walter")
+        nomeReferencia: nomeReferencia.trim(), // Apenas para controle interno
         ativo: true,
         criadoEm: serverTimestamp(),
       });
@@ -36,6 +48,7 @@ export default function GerarConviteAgente() {
       setLinkGerado(link);
       setLocalidade("");
       setNomeReferencia("");
+      setRole("agente");
     } catch (err: any) {
       console.error(err);
       setErro("Erro ao gerar convite. Verifique suas permissões.");
@@ -53,15 +66,29 @@ export default function GerarConviteAgente() {
     <main className="flex flex-col flex-1 p-4 sm:p-6 w-full max-w-2xl mx-auto animate-in fade-in">
       <header className="mb-6">
         <h1 className="text-2xl sm:text-3xl font-bold text-slate-800">
-          Convidar Novo Agente
+          Convidar Novo Usuário
         </h1>
         <p className="text-sm sm:text-base text-slate-600">
-          Gere um link exclusivo para o agente realizar o próprio cadastro.
+          Gere um link exclusivo para a equipe realizar o próprio cadastro.
         </p>
       </header>
 
       <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
         <form onSubmit={handleGerarLink} className="space-y-4">
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-slate-700">
+              Nível de Acesso
+            </label>
+            <select
+              value={role}
+              onChange={(e) => handleMudancaRole(e.target.value)}
+              className="w-full h-10 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-slate-400"
+            >
+              <option value="agente">Agente de Campo</option>
+              <option value="supervisor">Supervisor / Gerencial</option>
+            </select>
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="text-sm font-medium text-slate-700">
@@ -69,7 +96,7 @@ export default function GerarConviteAgente() {
               </label>
               <Input
                 type="text"
-                placeholder="Ex: Walter"
+                placeholder="Nome do usuários."
                 value={nomeReferencia}
                 onChange={(e) => setNomeReferencia(e.target.value)}
               />
@@ -112,7 +139,7 @@ export default function GerarConviteAgente() {
               Link gerado com sucesso!
             </h3>
             <p className="text-sm text-emerald-700 mb-3">
-              Envie este link para o agente. Ele só pode ser usado uma vez.
+              Envie este link para o usuário. Ele só pode ser usado uma vez.
             </p>
             <div className="flex flex-col sm:flex-row gap-2">
               <Input
