@@ -13,18 +13,27 @@ import {
   query,
   where,
   getDocs,
-  serverTimestamp,
   setDoc,
   deleteDoc,
+  Timestamp,
+  serverTimestamp,
 } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import { useSearchParams, useRouter } from "next/navigation";
-import Link from "next/link";
 
 function FormularioConteudo() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const idEdicao = searchParams.get("id");
+
+  // Pega a data atual no formato YYYY-MM-DD
+  const getHojeLocal = () => {
+    const data = new Date();
+    return `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, "0")}-${String(data.getDate()).padStart(2, "0")}`;
+  };
+
+  const [dataSelecionada, setDataSelecionada] = useState(getHojeLocal());
+  const [datasJaRegistradas, setDatasJaRegistradas] = useState<string[]>([]);
 
   const [houveDesembarque, setHouveDesembarque] = useState<string | null>(null);
   const [motivoSemDesembarque, setMotivoSemDesembarque] = useState("");
@@ -42,7 +51,6 @@ function FormularioConteudo() {
   const [identificacaoRelatorio, setIdentificacaoRelatorio] = useState("");
 
   const [loadingApp, setLoadingApp] = useState(true);
-  const [jaRegistrouHoje, setJaRegistrouHoje] = useState(false);
   const [loadingBtn, setLoadingBtn] = useState(false);
   const [erro, setErro] = useState("");
 
@@ -51,6 +59,25 @@ function FormularioConteudo() {
       if (!user) return;
 
       try {
+        // Busca todas as datas já registradas por esse agente para bloquear duplicatas
+        const q = query(
+          collection(db, "registros_diarios"),
+          where("agenteId", "==", user.uid),
+        );
+        const snaps = await getDocs(q);
+        const datas: string[] = [];
+
+        snaps.forEach((d) => {
+          const dataDoc = d.data().dataRegistro?.toDate();
+          if (dataDoc) {
+            const dStr = `${dataDoc.getFullYear()}-${String(dataDoc.getMonth() + 1).padStart(2, "0")}-${String(dataDoc.getDate()).padStart(2, "0")}`;
+            // Se estiver editando, não bloqueia a data do próprio documento sendo editado
+            if (idEdicao && d.id === idEdicao) return;
+            datas.push(dStr);
+          }
+        });
+        setDatasJaRegistradas(datas);
+
         if (idEdicao) {
           // MODO EDIÇÃO: Busca o documento principal
           const docRef = doc(db, "registros_diarios", idEdicao);
@@ -58,6 +85,13 @@ function FormularioConteudo() {
 
           if (docSnap.exists() && docSnap.data().agenteId === user.uid) {
             const dados = docSnap.data();
+
+            const dataRegistro = dados.dataRegistro?.toDate();
+            if (dataRegistro) {
+              setDataSelecionada(
+                `${dataRegistro.getFullYear()}-${String(dataRegistro.getMonth() + 1).padStart(2, "0")}-${String(dataRegistro.getDate()).padStart(2, "0")}`,
+              );
+            }
 
             setHouveDesembarque(dados.houveDesembarque ? "sim" : "nao");
             setMotivoSemDesembarque(dados.motivoSemDesembarque || "");
@@ -84,22 +118,6 @@ function FormularioConteudo() {
               setIdentificacaoRelatorio("");
             }
           }
-        } else {
-          const hoje = new Date().toISOString().split("T")[0];
-          const q = query(
-            collection(db, "registros_diarios"),
-            where("agenteId", "==", user.uid),
-          );
-          const snaps = await getDocs(q);
-
-          let enviouHoje = false;
-          snaps.forEach((d) => {
-            const dataDoc = d.data().dataRegistro?.toDate();
-            if (dataDoc && dataDoc.toISOString().split("T")[0] === hoje) {
-              enviouHoje = true;
-            }
-          });
-          setJaRegistrouHoje(enviouHoje);
         }
       } catch (err) {
         console.error("Erro ao carregar dados:", err);
@@ -111,10 +129,32 @@ function FormularioConteudo() {
     return () => unsubscribe();
   }, [idEdicao]);
 
+  // Função para verificar se a data cai em fim de semana
+  const isFimDeSemana = (dataStr: string) => {
+    if (!dataStr) return false;
+    // T12:00:00 é usado para evitar bugs de fuso horário que jogam a data para o dia anterior
+    const data = new Date(dataStr + "T12:00:00");
+    const dia = data.getDay();
+    return dia === 0 || dia === 6; // 0 = Domingo, 6 = Sábado
+  };
+
+  const dataJaRegistrada =
+    !idEdicao && datasJaRegistradas.includes(dataSelecionada);
+  const erroFimDeSemana = isFimDeSemana(dataSelecionada);
+  const bloqueiaEnvio = dataJaRegistrada || erroFimDeSemana;
+
   async function handleEnviarRegistro(e: React.FormEvent) {
     e.preventDefault();
     setErro("");
+
+    if (bloqueiaEnvio) return;
     setLoadingBtn(true);
+
+    if (!dataSelecionada) {
+      setErro("Por favor, selecione a data do registro.");
+      setLoadingBtn(false);
+      return;
+    }
 
     if (!houveDesembarque) {
       setErro("Por favor, informe se houve ou não desembarque.");
@@ -172,9 +212,12 @@ function FormularioConteudo() {
       const user = auth.currentUser;
       if (!user) throw new Error("Usuário não autenticado");
 
-      // Objeto base da Coleção Principal (repare que retiramos os dados do relatório daqui)
+      // Converte a string de data para Timestamp do Firebase
+      const dataParaSalvar = new Date(dataSelecionada + "T12:00:00");
+
       const dadosRegistro: Record<string, unknown> = {
         agenteId: user.uid,
+        dataRegistro: Timestamp.fromDate(dataParaSalvar), // Salva a data escolhida
         houveDesembarque: houveDesembarque === "sim",
         situacaoPreco,
         tipoColeta,
@@ -195,23 +238,21 @@ function FormularioConteudo() {
 
       let registroId = idEdicao;
 
-      // 1. Salva ou atualiza a Coleção Principal (registros_diarios)
+      // 1. Salva ou atualiza a Coleção Principal
       if (idEdicao) {
         await updateDoc(doc(db, "registros_diarios", idEdicao), dadosRegistro);
       } else {
-        dadosRegistro.dataRegistro = serverTimestamp();
         const novoDoc = await addDoc(
           collection(db, "registros_diarios"),
           dadosRegistro,
         );
-        registroId = novoDoc.id; // Guarda o ID gerado pelo Firebase
+        registroId = novoDoc.id;
       }
 
       // 2. Salva ou apaga os dados na nova Coleção (relatorios_producao)
       const relatorioRef = doc(db, "relatorios_producao", registroId as string);
 
       if (solicitacaoRelatorio === "sim") {
-        // setDoc cria ou sobreescreve um documento num ID específico (vinculando com o registro principal)
         await setDoc(relatorioRef, {
           registroDiarioId: registroId,
           agenteId: user.uid,
@@ -219,8 +260,7 @@ function FormularioConteudo() {
           dataAtualizacao: serverTimestamp(),
         });
       } else {
-        // Se for "não" (ou se alterou de sim para não), garante que nada fique salvo nessa coleção
-        await deleteDoc(relatorioRef).catch(() => {}); // catch vazio pois se não existir não tem problema
+        await deleteDoc(relatorioRef).catch(() => {});
       }
 
       // 3. Redirecionamento
@@ -244,25 +284,6 @@ function FormularioConteudo() {
     );
   }
 
-  if (jaRegistrouHoje && !idEdicao) {
-    return (
-      <main className="flex flex-col flex-1 p-6 items-center justify-center text-center max-w-md mx-auto w-full animate-in zoom-in-95">
-        <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-3xl mb-4">
-          ✓
-        </div>
-        <h2 className="text-xl font-bold text-gray-800 mb-2">
-          Registro Concluído
-        </h2>
-        <p className="text-gray-600 mb-6">
-          Você já enviou o seu relatório de campo do dia de hoje.
-        </p>
-        <Link href="/agente">
-          <Button>Voltar para o Painel</Button>
-        </Link>
-      </main>
-    );
-  }
-
   return (
     <main className="flex flex-col flex-1 p-4 sm:p-6 w-full max-w-2xl mx-auto">
       <header className="mb-6">
@@ -272,7 +293,7 @@ function FormularioConteudo() {
         <p className="text-sm sm:text-base text-gray-600">
           {idEdicao
             ? "Altere as informações abaixo e salve."
-            : "Resumo quantitativo das atividades."}
+            : "Insira a data desejada e faça o resumo quantitativo."}
         </p>
       </header>
 
@@ -280,6 +301,30 @@ function FormularioConteudo() {
         onSubmit={handleEnviarRegistro}
         className="bg-white p-4 sm:p-6 rounded-xl shadow-sm border border-gray-200 space-y-6"
       >
+        {/* NOVA ÁREA: SELEÇÃO DE DATA */}
+        <div className="space-y-3 p-4 bg-slate-50 rounded-lg border border-slate-200 mb-6">
+          <label className="text-base font-semibold text-slate-800">
+            Data do Registro
+          </label>
+          <Input
+            type="date"
+            value={dataSelecionada}
+            onChange={(e) => setDataSelecionada(e.target.value)}
+            required
+            className="w-full sm:w-1/2 bg-white"
+          />
+          {erroFimDeSemana && (
+            <p className="text-sm text-red-600 font-medium">
+              Lançamentos não são permitidos aos Sábados e Domingos.
+            </p>
+          )}
+          {dataJaRegistrada && (
+            <p className="text-sm text-amber-600 font-medium">
+              Você já enviou um relatório para esta data.
+            </p>
+          )}
+        </div>
+
         <div className="space-y-3 p-4 bg-gray-50 rounded-lg border border-gray-100">
           <label className="text-base font-semibold text-gray-800">
             Houve desembarque?
@@ -486,7 +531,7 @@ function FormularioConteudo() {
         <Button
           type="submit"
           className="w-full h-12 text-base mt-4"
-          disabled={loadingBtn}
+          disabled={bloqueiaEnvio || loadingBtn}
         >
           {loadingBtn
             ? "Processando..."
