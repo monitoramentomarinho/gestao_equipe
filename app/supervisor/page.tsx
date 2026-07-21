@@ -472,25 +472,6 @@ export default function SupervisorDashboard() {
             </div>
           </section>
 
-          <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-sm font-semibold text-slate-500">
-                Registros do agente
-              </p>
-              <p className="text-3xl font-black text-slate-800 mt-2">
-                {registrosDoAgente.length}
-              </p>
-            </div>
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-sm font-semibold text-slate-500">
-                Meses disponíveis
-              </p>
-              <p className="text-3xl font-black text-slate-800 mt-2">
-                {mesesDisponiveis.length}
-              </p>
-            </div>
-          </section>
-
           <section className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
