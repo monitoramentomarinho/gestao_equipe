@@ -26,7 +26,6 @@ function FormularioConteudo() {
   const searchParams = useSearchParams();
   const idEdicao = searchParams.get("id");
 
-  // Pega a data atual no formato YYYY-MM-DD
   const getHojeLocal = () => {
     const data = new Date();
     return `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, "0")}-${String(data.getDate()).padStart(2, "0")}`;
@@ -59,7 +58,6 @@ function FormularioConteudo() {
       if (!user) return;
 
       try {
-        // Busca todas as datas já registradas por esse agente para bloquear duplicatas
         const q = query(
           collection(db, "registros_diarios"),
           where("agenteId", "==", user.uid),
@@ -71,7 +69,6 @@ function FormularioConteudo() {
           const dataDoc = d.data().dataRegistro?.toDate();
           if (dataDoc) {
             const dStr = `${dataDoc.getFullYear()}-${String(dataDoc.getMonth() + 1).padStart(2, "0")}-${String(dataDoc.getDate()).padStart(2, "0")}`;
-            // Se estiver editando, não bloqueia a data do próprio documento sendo editado
             if (idEdicao && d.id === idEdicao) return;
             datas.push(dStr);
           }
@@ -79,7 +76,6 @@ function FormularioConteudo() {
         setDatasJaRegistradas(datas);
 
         if (idEdicao) {
-          // MODO EDIÇÃO: Busca o documento principal
           const docRef = doc(db, "registros_diarios", idEdicao);
           const docSnap = await getDoc(docRef);
 
@@ -104,7 +100,6 @@ function FormularioConteudo() {
             setClima(dados.clima || "");
             setInteracaoAnimais(dados.interacaoAnimais || "");
 
-            // Busca na nova coleção de relatórios de produção usando o mesmo ID
             const relatorioRef = doc(db, "relatorios_producao", idEdicao);
             const relatorioSnap = await getDoc(relatorioRef);
 
@@ -129,13 +124,11 @@ function FormularioConteudo() {
     return () => unsubscribe();
   }, [idEdicao]);
 
-  // Função para verificar se a data cai em fim de semana
   const isFimDeSemana = (dataStr: string) => {
     if (!dataStr) return false;
-    // T12:00:00 é usado para evitar bugs de fuso horário que jogam a data para o dia anterior
     const data = new Date(dataStr + "T12:00:00");
     const dia = data.getDay();
-    return dia === 0 || dia === 6; // 0 = Domingo, 6 = Sábado
+    return dia === 0 || dia === 6;
   };
 
   const dataJaRegistrada =
@@ -212,12 +205,12 @@ function FormularioConteudo() {
       const user = auth.currentUser;
       if (!user) throw new Error("Usuário não autenticado");
 
-      // Converte a string de data para Timestamp do Firebase
       const dataParaSalvar = new Date(dataSelecionada + "T12:00:00");
 
       const dadosRegistro: Record<string, unknown> = {
         agenteId: user.uid,
-        dataRegistro: Timestamp.fromDate(dataParaSalvar), // Salva a data escolhida
+        dataRegistro: Timestamp.fromDate(dataParaSalvar), // Data de Referência
+        enviadoEm: serverTimestamp(), // NOVO: Hora exata do envio/atualização
         houveDesembarque: houveDesembarque === "sim",
         situacaoPreco,
         tipoColeta,
@@ -238,7 +231,6 @@ function FormularioConteudo() {
 
       let registroId = idEdicao;
 
-      // 1. Salva ou atualiza a Coleção Principal
       if (idEdicao) {
         await updateDoc(doc(db, "registros_diarios", idEdicao), dadosRegistro);
       } else {
@@ -249,7 +241,6 @@ function FormularioConteudo() {
         registroId = novoDoc.id;
       }
 
-      // 2. Salva ou apaga os dados na nova Coleção (relatorios_producao)
       const relatorioRef = doc(db, "relatorios_producao", registroId as string);
 
       if (solicitacaoRelatorio === "sim") {
@@ -263,7 +254,6 @@ function FormularioConteudo() {
         await deleteDoc(relatorioRef).catch(() => {});
       }
 
-      // 3. Redirecionamento
       if (idEdicao) {
         router.push("/agente");
       } else {
@@ -301,7 +291,6 @@ function FormularioConteudo() {
         onSubmit={handleEnviarRegistro}
         className="bg-white p-4 sm:p-6 rounded-xl shadow-sm border border-gray-200 space-y-6"
       >
-        {/* NOVA ÁREA: SELEÇÃO DE DATA */}
         <div className="space-y-3 p-4 bg-slate-50 rounded-lg border border-slate-200 mb-6">
           <label className="text-base font-semibold text-slate-800">
             Data do Registro

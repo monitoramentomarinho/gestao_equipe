@@ -19,6 +19,7 @@ type Registro = {
   agenteId: string;
   nome?: string;
   dataRegistro?: Timestamp | null;
+  enviadoEm?: Timestamp | null;
   registradoPorSupervisor?: boolean;
   houveDesembarque?: boolean;
   qtdMonitoradas?: number | null;
@@ -293,7 +294,8 @@ export default function SupervisorDashboard() {
       const delimitador = ";";
       const linhas = [
         [
-          "Data",
+          "Data (Referência)",
+          "Hora de Envio",
           "Mês",
           "Ano",
           "Agente",
@@ -327,6 +329,14 @@ export default function SupervisorDashboard() {
           ano = String(dataRegistro.getFullYear());
         }
 
+        let horaEnvio = "N/A";
+        if (registro.enviadoEm) {
+          horaEnvio = registro.enviadoEm.toDate().toLocaleTimeString("pt-BR", {
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+        }
+
         const mon = registro.qtdMonitoradas || 0;
         const naoMon = registro.qtdNaoMonitoradas || 0;
         const totalDescargas = mon + naoMon;
@@ -342,6 +352,7 @@ export default function SupervisorDashboard() {
 
         const linha = [
           dataStr,
+          horaEnvio,
           mes,
           ano,
           agenteCsv?.nome || "Agente",
@@ -638,7 +649,6 @@ export default function SupervisorDashboard() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl overflow-hidden max-h-[90vh] flex flex-col">
             <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex justify-between items-center shrink-0">
-              {/* CORREÇÃO APLICADA: Data visível no título do Modal */}
               <h3 className="font-bold text-slate-800">
                 Detalhes do dia -{" "}
                 {diaSelecionado.data.split("-").reverse().join("/")}
@@ -658,15 +668,32 @@ export default function SupervisorDashboard() {
                 </p>
               ) : (
                 <>
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                    <p className="text-slate-600">Status</p>
-                    <p className="font-semibold text-slate-800 mt-1">
-                      {diaSelecionado.dadosRegistro?.ausenciaJustificada
-                        ? "Ausência justificada"
-                        : diaSelecionado.dadosRegistro?.registradoPorSupervisor
-                          ? "Registro gerencial"
-                          : "Registro do agente"}
-                    </p>
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 flex justify-between items-center">
+                    <div>
+                      <p className="text-slate-600">Status</p>
+                      <p className="font-semibold text-slate-800 mt-1">
+                        {diaSelecionado.dadosRegistro?.ausenciaJustificada
+                          ? "Ausência justificada"
+                          : diaSelecionado.dadosRegistro
+                                ?.registradoPorSupervisor
+                            ? "Registro gerencial"
+                            : "Registro do agente"}
+                      </p>
+                    </div>
+
+                    {diaSelecionado.dadosRegistro?.enviadoEm && (
+                      <div className="text-right">
+                        <p className="text-slate-600">Enviado às</p>
+                        <p className="font-bold text-slate-800 mt-1">
+                          {diaSelecionado.dadosRegistro.enviadoEm
+                            .toDate()
+                            .toLocaleTimeString("pt-BR", {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                        </p>
+                      </div>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -699,7 +726,6 @@ export default function SupervisorDashboard() {
                     </div>
                   </div>
 
-                  {/* NOVOS DADOS EXIBIDOS NO MODAL: Cenário */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
                     <div className="rounded-lg border border-slate-200 p-3">
                       <p className="text-slate-500">Situação do preço</p>
@@ -731,7 +757,6 @@ export default function SupervisorDashboard() {
                     </div>
                   </div>
 
-                  {/* NOVOS DADOS EXIBIDOS NO MODAL: Relatório de Produção */}
                   <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 mt-3">
                     <p className="text-blue-800 font-semibold mb-1">
                       Solicitação de relatório de produção?
