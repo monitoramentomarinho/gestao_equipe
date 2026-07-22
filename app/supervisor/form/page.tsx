@@ -1,5 +1,5 @@
 "use client";
-
+import { Info } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { auth, db } from "@/lib/firebase";
@@ -166,13 +166,20 @@ export default function FormularioSupervisor() {
           </div>
 
           {justificarAusencia && (
-            <textarea
-              className="w-full border border-slate-200 rounded-md p-2.5 text-sm text-slate-800"
-              placeholder="Explique a ausência do agente e o motivo da justificativa"
-              value={justificativaAusencia}
-              onChange={(e) => setJustificativaAusencia(e.target.value)}
-              rows={4}
-            />
+            <div>
+              <textarea
+                className="w-full border border-slate-200 rounded-md p-2.5 text-sm text-slate-800"
+                placeholder="Explique a ausência do agente e o motivo da justificativa"
+                value={justificativaAusencia}
+                onChange={(e) => setJustificativaAusencia(e.target.value)}
+                rows={4}
+              />
+
+              <span className="text-xs text-slate-500 flex items-center gap-2">
+                O documento que justifica a ausência do agente deve ser enviado
+                para o email: monitoramentomarinho@gmail.com
+              </span>
+            </div>
           )}
         </div>
 
