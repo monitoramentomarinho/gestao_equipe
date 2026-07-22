@@ -290,8 +290,29 @@ export default function SupervisorDashboard() {
       // O BOM (\uFEFF) avisa ao Excel que o arquivo é UTF-8, corrigindo a acentuação
       const BOM = "\uFEFF";
 
+      const delimitador = ";";
       const linhas = [
-        "Data,Mês,Ano,Agente,Status,Houve Desembarque,Num de descargas,Num de monitoradas,Num de não monitoradas,Situação do Preço,Tipo de coleta,Clima,Interação com animais marinhos,Solicitação de relatórios,Motivo sem desembarque,Observações,Justificativa Ausência",
+        [
+          "Data",
+          "Mês",
+          "Ano",
+          "Agente",
+          "Status",
+          "Houve Desembarque",
+          "Num de descargas",
+          "Num de monitoradas",
+          "Num de não monitoradas",
+          "Situação do Preço",
+          "Tipo de coleta",
+          "Clima",
+          "Interação com animais marinhos",
+          "Solicitação de relatórios",
+          "Motivo sem desembarque",
+          "Observações",
+          "Justificativa Ausência",
+        ]
+          .map((valor) => `"${String(valor).replace(/"/g, '""')}"`)
+          .join(delimitador),
       ];
 
       registrosCsv.forEach((registro) => {
@@ -337,13 +358,13 @@ export default function SupervisorDashboard() {
           registro.tipoColeta || "N/A",
           registro.clima || "N/A",
           animais,
-          relatorioVinculado ? "Sim" : "Não", // Aqui aplicamos a correção!
+          relatorioVinculado ? "Sim" : "Não",
           (registro.motivoSemDesembarque || "").replace(/\n/g, " "),
           (registro.observacoes || "").replace(/\n/g, " "),
           (registro.justificativaAusencia || "").replace(/\n/g, " "),
         ]
           .map((valor) => `"${String(valor).replace(/"/g, '""')}"`)
-          .join(",");
+          .join(delimitador);
         linhas.push(linha);
       });
 
