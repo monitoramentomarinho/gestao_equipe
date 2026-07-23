@@ -82,6 +82,8 @@ const construirMesVisao = (key: string, registrosDoAgente: Registro[]) => {
     for (let i = 0; i < 7; i += 1) {
       const data = new Date(cursor);
       const ehDoMes = data >= inicioMes && data <= fimMes;
+      const diaDaSemana = data.getDay();
+      const ehDiaUtil = diaDaSemana >= 1 && diaDaSemana <= 5;
       const dataKey = `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, "0")}-${String(data.getDate()).padStart(2, "0")}`;
       const registroDoDia = registrosDoAgente.find((item) => {
         const dataItem = item.dataRegistro?.toDate();
@@ -90,14 +92,16 @@ const construirMesVisao = (key: string, registrosDoAgente: Registro[]) => {
         return chaveItem === dataKey;
       });
 
-      semana.push({
-        data: dataKey,
-        diaTexto: data.toLocaleDateString("pt-BR", { weekday: "short" }),
-        numero: data.getDate(),
-        doMes: ehDoMes,
-        temRegistro: Boolean(registroDoDia),
-        dadosRegistro: registroDoDia,
-      });
+      if (ehDiaUtil) {
+        semana.push({
+          data: dataKey,
+          diaTexto: data.toLocaleDateString("pt-BR", { weekday: "short" }),
+          numero: data.getDate(),
+          doMes: ehDoMes,
+          temRegistro: Boolean(registroDoDia),
+          dadosRegistro: registroDoDia,
+        });
+      }
       cursor.setDate(cursor.getDate() + 1);
     }
 
@@ -132,6 +136,7 @@ export default function SupervisorDashboard() {
 
   const [loading, setLoading] = useState(true);
   const [termoPesquisa, setTermoPesquisa] = useState("");
+  const [pesquisaEmFoco, setPesquisaEmFoco] = useState(false);
   const [agenteSelecionado, setAgenteSelecionado] = useState<Agente | null>(
     null,
   );
@@ -223,7 +228,7 @@ export default function SupervisorDashboard() {
   }, []);
 
   const agentesFiltrados = useMemo(() => {
-    if (!termoPesquisa.trim()) return [];
+    if (!termoPesquisa.trim()) return agentes;
     return agentes.filter((agente) =>
       normalizarTexto(agente.nome).includes(normalizarTexto(termoPesquisa)),
     );
@@ -447,12 +452,14 @@ export default function SupervisorDashboard() {
           <input
             value={termoPesquisa}
             onChange={(event) => setTermoPesquisa(event.target.value)}
+            onFocus={() => setPesquisaEmFoco(true)}
+            onBlur={() => setPesquisaEmFoco(false)}
             placeholder="Digite o nome do agente"
             className="w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800"
           />
         </div>
 
-        {termoPesquisa && (
+        {pesquisaEmFoco && (
           <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
             {agentesFiltrados.length === 0 ? (
               <p className="text-sm text-slate-500">
@@ -462,11 +469,14 @@ export default function SupervisorDashboard() {
               agentesFiltrados.map((agente) => (
                 <button
                   key={agente.id}
+                  type="button"
+                  onMouseDown={(event) => event.preventDefault()}
                   onClick={() => {
                     setAgenteSelecionado(agente);
                     setTermoPesquisa(agente.nome);
                     setMesSelecionado("");
                     setSemanaSelecionada(null);
+                    setPesquisaEmFoco(false);
                   }}
                   className="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-700 shadow-sm"
                 >
@@ -590,10 +600,7 @@ export default function SupervisorDashboard() {
                 </Button>
               </div>
 
-              <div
-                className=" flex-auto quero que os itens preencham a div toda, porem responsiva
-                grid grid-cols-3 gap-3 mt-4 sm:grid-cols-4 md:grid-cols-7"
-              >
+              <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5">
                 {semanaSelecionada.dias.map((dia) => {
                   const registro = dia.dadosRegistro;
                   const temAusenciaJustificada =
