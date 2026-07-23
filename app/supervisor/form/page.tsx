@@ -1,5 +1,5 @@
 "use client";
-import { Info } from "lucide-react";
+
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { auth, db } from "@/lib/firebase";
