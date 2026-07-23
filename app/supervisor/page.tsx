@@ -28,6 +28,7 @@ type Registro = {
   observacoes?: string | null;
   justificativaAusencia?: string | null;
   ausenciaJustificada?: boolean;
+  urlComprovante?: string | null; // Tipagem do Cloudinary adicionada
   situacaoPreco?: string | null;
   tipoColeta?: string | null;
   clima?: string | null;
@@ -177,7 +178,6 @@ export default function SupervisorDashboard() {
 
     carregarDadosIniciais();
 
-    // Listener para a coleção principal (Registros Diários)
     const unsubscribeRegistros = onSnapshot(
       collection(db, "registros_diarios"),
       (snapshot) => {
@@ -199,7 +199,6 @@ export default function SupervisorDashboard() {
       },
     );
 
-    // Novo Listener para cruzar a coleção de Relatórios de Produção
     const unsubscribeRelatorios = onSnapshot(
       collection(db, "relatorios_producao"),
       (snapshot) => {
@@ -288,7 +287,6 @@ export default function SupervisorDashboard() {
         );
       });
 
-      // O BOM (\uFEFF) avisa ao Excel que o arquivo é UTF-8, corrigindo a acentuação
       const BOM = "\uFEFF";
 
       const delimitador = ";";
@@ -312,6 +310,7 @@ export default function SupervisorDashboard() {
           "Motivo sem desembarque",
           "Observações",
           "Justificativa Ausência",
+          "Link do Comprovante",
         ]
           .map((valor) => `"${String(valor).replace(/"/g, '""')}"`)
           .join(delimitador),
@@ -347,7 +346,6 @@ export default function SupervisorDashboard() {
         else if (registro.interacaoAnimais === "sem_informacao")
           animais = "Sem Informação";
 
-        // Verifica na coleção secundária se esse registro teve relatório de produção
         const relatorioVinculado = relatoriosMap[registro.id];
 
         const linha = [
@@ -373,6 +371,7 @@ export default function SupervisorDashboard() {
           (registro.motivoSemDesembarque || "").replace(/\n/g, " "),
           (registro.observacoes || "").replace(/\n/g, " "),
           (registro.justificativaAusencia || "").replace(/\n/g, " "),
+          registro.urlComprovante || "N/A",
         ]
           .map((valor) => `"${String(valor).replace(/"/g, '""')}"`)
           .join(delimitador);
@@ -779,13 +778,27 @@ export default function SupervisorDashboard() {
                   </div>
 
                   {diaSelecionado.dadosRegistro?.justificativaAusencia && (
-                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
-                      <p className="text-amber-700 font-semibold">
-                        Justificativa da ausência
-                      </p>
-                      <p className="text-slate-700 mt-1">
-                        {diaSelecionado.dadosRegistro.justificativaAusencia}
-                      </p>
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 flex flex-col items-start gap-2">
+                      <div className="w-full">
+                        <p className="text-amber-700 font-semibold">
+                          Justificativa da ausência
+                        </p>
+                        <p className="text-slate-700 mt-1">
+                          {diaSelecionado.dadosRegistro.justificativaAusencia}
+                        </p>
+                      </div>
+
+                      {/* BOTÃO PARA VISUALIZAR O ATESTADO */}
+                      {diaSelecionado.dadosRegistro.urlComprovante && (
+                        <a
+                          href={diaSelecionado.dadosRegistro.urlComprovante}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-2 inline-flex px-4 py-2 bg-amber-600 text-white text-xs font-bold rounded hover:bg-amber-700 transition-colors"
+                        >
+                          Visualizar Comprovante / Atestado
+                        </a>
+                      )}
                     </div>
                   )}
 
