@@ -55,6 +55,11 @@ export default function AgenteDashboard() {
       segunda.setDate(hoje.getDate() + diffParaSegunda);
       segunda.setHours(0, 0, 0, 0);
 
+      // --- CORREÇÃO AQUI: Criamos um limite final para a sexta-feira ---
+      const sextaFim = new Date(segunda);
+      sextaFim.setDate(segunda.getDate() + 4);
+      sextaFim.setHours(23, 59, 59, 999);
+
       const diasUteis: DiaSemana[] = [];
       const nomesDias = ["Seg", "Ter", "Qua", "Qui", "Sex"];
 
@@ -86,7 +91,8 @@ export default function AgenteDashboard() {
 
         const dataObj = dataRegistroDB.toDate();
 
-        if (dataObj >= segunda) {
+        // --- CORREÇÃO AQUI: Verificamos se está ENTRE segunda e sexta ---
+        if (dataObj >= segunda && dataObj <= sextaFim) {
           const dataString = dataObj.toISOString().split("T")[0];
           registrosPorData[dataString] = {
             id: docSnap.id,
@@ -251,7 +257,6 @@ export default function AgenteDashboard() {
               </button>
             </div>
 
-            {/* Corpo do Pop-up com rolagem máxima para mobile */}
             <div className="p-4 overflow-y-auto max-h-[60vh]">
               {!diaSelecionado.temRegistro || !diaSelecionado.dadosRegistro ? (
                 <p className="text-gray-500 text-center py-4">
