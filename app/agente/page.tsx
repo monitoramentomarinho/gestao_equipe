@@ -55,7 +55,6 @@ export default function AgenteDashboard() {
       segunda.setDate(hoje.getDate() + diffParaSegunda);
       segunda.setHours(0, 0, 0, 0);
 
-      // --- CORREÇÃO AQUI: Criamos um limite final para a sexta-feira ---
       const sextaFim = new Date(segunda);
       sextaFim.setDate(segunda.getDate() + 4);
       sextaFim.setHours(23, 59, 59, 999);
@@ -74,11 +73,27 @@ export default function AgenteDashboard() {
         });
       }
 
-      const q = query(
+      // 1. Busca os Registros Diários
+      const qRegistros = query(
         collection(db, "registros_diarios"),
         where("agenteId", "==", userId),
       );
-      const querySnapshot = await getDocs(q);
+      const querySnapshot = await getDocs(qRegistros);
+
+      // 2. Busca os Relatórios de Produção daquele agente (A MÁGICA ACONTECE AQUI)
+      const qRelatorios = query(
+        collection(db, "relatorios_producao"),
+        where("agenteId", "==", userId),
+      );
+      const relatoriosSnapshot = await getDocs(qRelatorios);
+
+      const relatoriosMap: Record<string, string> = {};
+      relatoriosSnapshot.forEach((doc) => {
+        const data = doc.data();
+        // Usa o id do registro como chave para achar fácil depois
+        const idRegistroVinculado = data.registroDiarioId || doc.id;
+        relatoriosMap[idRegistroVinculado] = data.identificacaoRelatorio;
+      });
 
       let monitoradas = 0;
       let naoMonitoradas = 0;
@@ -91,12 +106,24 @@ export default function AgenteDashboard() {
 
         const dataObj = dataRegistroDB.toDate();
 
-        // --- CORREÇÃO AQUI: Verificamos se está ENTRE segunda e sexta ---
         if (dataObj >= segunda && dataObj <= sextaFim) {
           const dataString = dataObj.toISOString().split("T")[0];
+
+          // Verifica se esse registro existe lá no mapa de relatórios que criamos
+          const identRelatorioSecundario = relatoriosMap[docSnap.id];
+
+          // Confirmação à prova de falhas: checa tanto na coleção separada quanto dentro do próprio doc
+          const temRelatorio =
+            !!identRelatorioSecundario ||
+            dados.solicitacaoRelatorio === "sim" ||
+            dados.solicitacaoRelatorio === true;
+
           registrosPorData[dataString] = {
             id: docSnap.id,
             ...dados,
+            solicitacaoRelatorio: temRelatorio,
+            identificacaoRelatorio:
+              identRelatorioSecundario || dados.identificacaoRelatorio || null,
           } as RegistroDiario;
 
           if (dados.houveDesembarque) {
