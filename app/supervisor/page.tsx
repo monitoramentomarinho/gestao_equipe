@@ -28,7 +28,7 @@ type Registro = {
   observacoes?: string | null;
   justificativaAusencia?: string | null;
   ausenciaJustificada?: boolean;
-  urlComprovante?: string | null; // Tipagem do Cloudinary adicionada
+  urlComprovante?: string | null;
   situacaoPreco?: string | null;
   tipoColeta?: string | null;
   clima?: string | null;
@@ -65,6 +65,7 @@ const construirMesVisao = (key: string, registrosDoAgente: Registro[]) => {
   const mes = Number(mesTexto) - 1;
   const inicioMes = new Date(ano, mes, 1);
   const fimMes = new Date(ano, mes + 1, 0);
+
   const inicioSemana = new Date(inicioMes);
   const diff = inicioSemana.getDay() === 0 ? -6 : 1 - inicioSemana.getDay();
   inicioSemana.setDate(inicioMes.getDate() + diff);
@@ -73,18 +74,19 @@ const construirMesVisao = (key: string, registrosDoAgente: Registro[]) => {
   const cursor = new Date(inicioSemana);
   let semanaIndex = 1;
 
-  while (cursor <= fimMes || semanas.length < 6) {
+  // CORREÇÃO: O loop agora só roda enquanto o cursor não ultrapassar o mês vigente
+  while (cursor <= fimMes) {
     const semana: DiaCalendario[] = [];
-    const semanaInicio = new Date(cursor);
-    const semanaFim = new Date(cursor);
-    semanaFim.setDate(semanaInicio.getDate() + 6);
 
     for (let i = 0; i < 7; i += 1) {
       const data = new Date(cursor);
-      const ehDoMes = data >= inicioMes && data <= fimMes;
+      const ehDoMes = data.getMonth() === mes;
+
       const diaDaSemana = data.getDay();
       const ehDiaUtil = diaDaSemana >= 1 && diaDaSemana <= 5;
+
       const dataKey = `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, "0")}-${String(data.getDate()).padStart(2, "0")}`;
+
       const registroDoDia = registrosDoAgente.find((item) => {
         const dataItem = item.dataRegistro?.toDate();
         if (!dataItem) return false;
@@ -105,14 +107,17 @@ const construirMesVisao = (key: string, registrosDoAgente: Registro[]) => {
       cursor.setDate(cursor.getDate() + 1);
     }
 
-    semanas.push({
-      id: `${key}-semana-${semanaIndex}`,
-      label: `Semana ${semanaIndex}`,
-      dias: semana,
-    });
-    semanaIndex += 1;
+    // CORREÇÃO: Verifica se a semana tem PELO MENOS UM dia útil que pertença ao mês atual
+    const temDiaNoMesAtual = semana.some((dia) => dia.doMes);
 
-    if (semanaFim >= fimMes && semanas.length > 1) break;
+    if (temDiaNoMesAtual) {
+      semanas.push({
+        id: `${key}-semana-${semanaIndex}`,
+        label: `Semana ${semanaIndex}`,
+        dias: semana,
+      });
+      semanaIndex += 1;
+    }
   }
 
   const label = inicioMes.toLocaleDateString("pt-BR", {
@@ -795,7 +800,6 @@ export default function SupervisorDashboard() {
                         </p>
                       </div>
 
-                      {/* BOTÃO PARA VISUALIZAR O ATESTADO */}
                       {diaSelecionado.dadosRegistro.urlComprovante && (
                         <a
                           href={diaSelecionado.dadosRegistro.urlComprovante}
