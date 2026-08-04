@@ -11,7 +11,7 @@ import {
   Timestamp,
 } from "firebase/firestore";
 import { Button } from "@/components/ui/button";
-import { Info, X } from "lucide-react";
+import { Info, X, CalendarDays } from "lucide-react";
 
 type Agente = { id: string; nome: string; localidade: string };
 type Registro = {
@@ -152,7 +152,6 @@ export default function SupervisorDashboard() {
     null,
   );
 
-  // Estados para o Modal de CSV
   const [modalCsvAberto, setModalCsvAberto] = useState(false);
   const [csvAgentesSelecionados, setCsvAgentesSelecionados] = useState<
     Agente[]
@@ -248,8 +247,20 @@ export default function SupervisorDashboard() {
     );
   }, [agenteSelecionado, registros]);
 
+  // Constante fixa para facilitar o retorno
+  const mesAtualHojeKey = useMemo(() => {
+    const hoje = new Date();
+    return `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}`;
+  }, []);
+
   const mesesDisponiveis = useMemo(() => {
     const mapa = new Map<string, MesVisao>();
+
+    // GARANTIA: Adiciona sempre o mês real atual como primeira opção
+    mapa.set(
+      mesAtualHojeKey,
+      construirMesVisao(mesAtualHojeKey, registrosDoAgente),
+    );
 
     registrosDoAgente.forEach((registro) => {
       const dataRegistro = registro.dataRegistro?.toDate();
@@ -263,8 +274,8 @@ export default function SupervisorDashboard() {
       }
     });
 
-    return Array.from(mapa.values()).sort((a, b) => a.key.localeCompare(b.key));
-  }, [registrosDoAgente]);
+    return Array.from(mapa.values()).sort((a, b) => b.key.localeCompare(a.key));
+  }, [registrosDoAgente, mesAtualHojeKey]);
 
   const mesSelecionadoAtivo = mesSelecionado || mesesDisponiveis[0]?.key || "";
 
@@ -281,7 +292,6 @@ export default function SupervisorDashboard() {
   const gerarCsv = () => {
     setCsvGerando(true);
     try {
-      // Define os agentes que serão exportados: os selecionados, ou TODOS se a lista estiver vazia
       const agentesParaExportar =
         csvAgentesSelecionados.length > 0 ? csvAgentesSelecionados : agentes;
       const idsParaExportar = agentesParaExportar.map((a) => a.id);
@@ -290,7 +300,6 @@ export default function SupervisorDashboard() {
         const dataRegistro = registro.dataRegistro?.toDate();
         if (!dataRegistro) return false;
 
-        // Verifica se o registro pertence a um dos agentes no filtro
         if (!idsParaExportar.includes(registro.agenteId)) return false;
 
         const inicio = csvDataInicio
@@ -336,7 +345,6 @@ export default function SupervisorDashboard() {
           .join(delimitador),
       ];
 
-      // Ordenar os registros por data antes de gerar as linhas
       registrosCsv.sort((a, b) => {
         const dataA = a.dataRegistro?.toMillis() || 0;
         const dataB = b.dataRegistro?.toMillis() || 0;
@@ -375,7 +383,6 @@ export default function SupervisorDashboard() {
 
         const relatorioVinculado = relatoriosMap[registro.id];
 
-        // Pega o nome do agente atual iterado
         const nomeDoAgenteAtual =
           agentes.find((a) => a.id === registro.agenteId)?.nome ||
           "Agente Desconhecido";
@@ -417,7 +424,6 @@ export default function SupervisorDashboard() {
       const link = document.createElement("a");
       link.href = url;
 
-      // Nome do arquivo inteligente
       let nomeArquivo = "relatorio_geral_agentes";
       if (csvAgentesSelecionados.length === 1) {
         nomeArquivo = `relatorio_${csvAgentesSelecionados[0].nome.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`;
@@ -467,8 +473,6 @@ export default function SupervisorDashboard() {
           <Button
             className="bg-emerald-600 hover:bg-emerald-700"
             onClick={() => {
-              // Se o supervisor já estiver olhando os dados de um agente específico,
-              // já trazemos ele pré-selecionado para facilitar. Senão, fica vazio (todos).
               setCsvAgentesSelecionados(
                 agenteSelecionado ? [agenteSelecionado] : [],
               );
@@ -562,35 +566,35 @@ export default function SupervisorDashboard() {
               </div>
             </div>
 
-            <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex flex-wrap gap-2">
-                {mesesDisponiveis.map((mes) => (
-                  <button
-                    key={mes.key}
-                    onClick={() => {
-                      setMesSelecionado(mes.key);
+            {/* Nova Seção de Navegação Consolidada */}
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+              <div className="flex flex-col gap-2 w-full sm:w-auto">
+                <label className="text-sm font-semibold text-slate-700">
+                  Busca por mês
+                </label>
+                <div className="flex items-center gap-2 w-full">
+                  <input
+                    type="month"
+                    value={mesSelecionadoAtivo}
+                    onChange={(event) => {
+                      setMesSelecionado(event.target.value);
                       setSemanaSelecionada(null);
                     }}
-                    className={`rounded-full border px-3 py-2 text-sm font-medium ${mes.key === mesSelecionadoAtivo ? "bg-slate-800 text-white border-slate-800" : "border-slate-200 text-slate-700 bg-white"}`}
+                    className="w-full sm:w-auto rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-400"
+                  />
+                  <Button
+                    variant="outline"
+                    className="shrink-0 border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
+                    onClick={() => {
+                      setMesSelecionado(mesAtualHojeKey);
+                      setSemanaSelecionada(null);
+                    }}
+                    title="Voltar para o Mês Atual"
                   >
-                    Mês atual
-                  </button>
-                ))}
-              </div>
-
-              <div className="flex flex-col gap-1 sm:flex-row sm:items-center">
-                <label className="text-sm font-semibold text-slate-700">
-                  Buscar outro mês:
-                </label>
-                <input
-                  type="month"
-                  value={mesSelecionadoAtivo}
-                  onChange={(event) => {
-                    setMesSelecionado(event.target.value);
-                    setSemanaSelecionada(null);
-                  }}
-                  className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800"
-                />
+                    <CalendarDays className="h-4 w-4 sm:mr-2" />
+                    <span className="hidden sm:inline">Mês atual</span>
+                  </Button>
+                </div>
               </div>
             </div>
 
@@ -887,7 +891,6 @@ export default function SupervisorDashboard() {
                   </span>
                 </label>
 
-                {/* Renderização das Tags dos Agentes Selecionados */}
                 {csvAgentesSelecionados.length > 0 && (
                   <div className="flex flex-wrap gap-2 mb-2 p-2 bg-slate-50 border border-slate-200 rounded-md">
                     {csvAgentesSelecionados.map((agente) => (
@@ -913,9 +916,8 @@ export default function SupervisorDashboard() {
                   </div>
                 )}
 
-                {/* Dropdown multi-seleção de Agentes */}
                 <select
-                  value="" // Mantém no placeholder para sempre ser um seletor de ações
+                  value=""
                   onChange={(event) => {
                     const idSelecionado = event.target.value;
                     if (!idSelecionado) return;
