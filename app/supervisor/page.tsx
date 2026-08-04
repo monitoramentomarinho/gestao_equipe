@@ -11,7 +11,7 @@ import {
   Timestamp,
 } from "firebase/firestore";
 import { Button } from "@/components/ui/button";
-import { Info } from "lucide-react";
+import { Info, X } from "lucide-react";
 
 type Agente = { id: string; nome: string; localidade: string };
 type Registro = {
@@ -74,7 +74,6 @@ const construirMesVisao = (key: string, registrosDoAgente: Registro[]) => {
   const cursor = new Date(inicioSemana);
   let semanaIndex = 1;
 
-  // CORREÇÃO: O loop agora só roda enquanto o cursor não ultrapassar o mês vigente
   while (cursor <= fimMes) {
     const semana: DiaCalendario[] = [];
 
@@ -107,7 +106,6 @@ const construirMesVisao = (key: string, registrosDoAgente: Registro[]) => {
       cursor.setDate(cursor.getDate() + 1);
     }
 
-    // CORREÇÃO: Verifica se a semana tem PELO MENOS UM dia útil que pertença ao mês atual
     const temDiaNoMesAtual = semana.some((dia) => dia.doMes);
 
     if (temDiaNoMesAtual) {
@@ -153,8 +151,12 @@ export default function SupervisorDashboard() {
   const [semanaSelecionada, setSemanaSelecionada] = useState<SemanaMes | null>(
     null,
   );
+
+  // Estados para o Modal de CSV
   const [modalCsvAberto, setModalCsvAberto] = useState(false);
-  const [csvAgenteId, setCsvAgenteId] = useState("");
+  const [csvAgentesSelecionados, setCsvAgentesSelecionados] = useState<
+    Agente[]
+  >([]);
   const [csvDataInicio, setCsvDataInicio] = useState("");
   const [csvDataFim, setCsvDataFim] = useState("");
   const [csvGerando, setCsvGerando] = useState(false);
@@ -277,17 +279,20 @@ export default function SupervisorDashboard() {
   };
 
   const gerarCsv = () => {
-    if (!csvAgenteId) {
-      setErroCsv("Selecione um agente antes de gerar o CSV.");
-      return;
-    }
-
     setCsvGerando(true);
     try {
-      const agenteCsv = agentes.find((agente) => agente.id === csvAgenteId);
+      // Define os agentes que serão exportados: os selecionados, ou TODOS se a lista estiver vazia
+      const agentesParaExportar =
+        csvAgentesSelecionados.length > 0 ? csvAgentesSelecionados : agentes;
+      const idsParaExportar = agentesParaExportar.map((a) => a.id);
+
       const registrosCsv = registros.filter((registro) => {
         const dataRegistro = registro.dataRegistro?.toDate();
-        if (!dataRegistro || registro.agenteId !== csvAgenteId) return false;
+        if (!dataRegistro) return false;
+
+        // Verifica se o registro pertence a um dos agentes no filtro
+        if (!idsParaExportar.includes(registro.agenteId)) return false;
+
         const inicio = csvDataInicio
           ? new Date(`${csvDataInicio}T00:00:00`)
           : null;
@@ -297,8 +302,13 @@ export default function SupervisorDashboard() {
         );
       });
 
-      const BOM = "\uFEFF";
+      if (registrosCsv.length === 0) {
+        setErroCsv("Nenhum registro encontrado para este filtro.");
+        setCsvGerando(false);
+        return;
+      }
 
+      const BOM = "\uFEFF";
       const delimitador = ";";
       const linhas = [
         [
@@ -325,6 +335,13 @@ export default function SupervisorDashboard() {
           .map((valor) => `"${String(valor).replace(/"/g, '""')}"`)
           .join(delimitador),
       ];
+
+      // Ordenar os registros por data antes de gerar as linhas
+      registrosCsv.sort((a, b) => {
+        const dataA = a.dataRegistro?.toMillis() || 0;
+        const dataB = b.dataRegistro?.toMillis() || 0;
+        return dataA - dataB;
+      });
 
       registrosCsv.forEach((registro) => {
         const dataRegistro = registro.dataRegistro?.toDate();
@@ -358,12 +375,17 @@ export default function SupervisorDashboard() {
 
         const relatorioVinculado = relatoriosMap[registro.id];
 
+        // Pega o nome do agente atual iterado
+        const nomeDoAgenteAtual =
+          agentes.find((a) => a.id === registro.agenteId)?.nome ||
+          "Agente Desconhecido";
+
         const linha = [
           dataStr,
           horaEnvio,
           mes,
           ano,
-          agenteCsv?.nome || "Agente",
+          nomeDoAgenteAtual,
           registro.ausenciaJustificada
             ? "ausencia_justificada"
             : registro.registradoPorSupervisor
@@ -394,10 +416,16 @@ export default function SupervisorDashboard() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      const nomeArquivo = (agenteCsv?.nome || "agente")
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "_");
-      link.download = `relatorio_${nomeArquivo}.csv`;
+
+      // Nome do arquivo inteligente
+      let nomeArquivo = "relatorio_geral_agentes";
+      if (csvAgentesSelecionados.length === 1) {
+        nomeArquivo = `relatorio_${csvAgentesSelecionados[0].nome.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`;
+      } else if (csvAgentesSelecionados.length > 1) {
+        nomeArquivo = "relatorio_multiplos_agentes";
+      }
+
+      link.download = `${nomeArquivo}.csv`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -439,7 +467,11 @@ export default function SupervisorDashboard() {
           <Button
             className="bg-emerald-600 hover:bg-emerald-700"
             onClick={() => {
-              setCsvAgenteId(agenteSelecionado?.id || "");
+              // Se o supervisor já estiver olhando os dados de um agente específico,
+              // já trazemos ele pré-selecionado para facilitar. Senão, fica vazio (todos).
+              setCsvAgentesSelecionados(
+                agenteSelecionado ? [agenteSelecionado] : [],
+              );
               setCsvDataInicio("");
               setCsvDataFim("");
               setErroCsv("");
@@ -849,23 +881,79 @@ export default function SupervisorDashboard() {
             <div className="p-4 space-y-4 text-sm">
               <div className="space-y-2">
                 <label className="text-sm font-semibold text-slate-700">
-                  Agente
+                  Agentes{" "}
+                  <span className="text-xs font-normal text-slate-500">
+                    (Vazio = Todos os agentes)
+                  </span>
                 </label>
+
+                {/* Renderização das Tags dos Agentes Selecionados */}
+                {csvAgentesSelecionados.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-2 p-2 bg-slate-50 border border-slate-200 rounded-md">
+                    {csvAgentesSelecionados.map((agente) => (
+                      <span
+                        key={agente.id}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-100 text-emerald-800 text-xs font-medium rounded-full border border-emerald-200 shadow-sm"
+                      >
+                        {agente.nome}
+                        <button
+                          onClick={() => {
+                            setCsvAgentesSelecionados(
+                              csvAgentesSelecionados.filter(
+                                (a) => a.id !== agente.id,
+                              ),
+                            );
+                          }}
+                          className="text-emerald-600 hover:text-emerald-900 transition-colors focus:outline-none"
+                        >
+                          <X size={14} strokeWidth={3} />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {/* Dropdown multi-seleção de Agentes */}
                 <select
-                  value={csvAgenteId}
-                  onChange={(event) => setCsvAgenteId(event.target.value)}
-                  className="w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800"
+                  value="" // Mantém no placeholder para sempre ser um seletor de ações
+                  onChange={(event) => {
+                    const idSelecionado = event.target.value;
+                    if (!idSelecionado) return;
+
+                    const agenteAdicionado = agentes.find(
+                      (a) => a.id === idSelecionado,
+                    );
+                    if (
+                      agenteAdicionado &&
+                      !csvAgentesSelecionados.find(
+                        (a) => a.id === idSelecionado,
+                      )
+                    ) {
+                      setCsvAgentesSelecionados([
+                        ...csvAgentesSelecionados,
+                        agenteAdicionado,
+                      ]);
+                    }
+                  }}
+                  className="w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-400"
                 >
-                  <option value="">Selecione um agente</option>
-                  {agentes.map((agente) => (
-                    <option key={agente.id} value={agente.id}>
-                      {agente.nome}
-                    </option>
-                  ))}
+                  <option value="">Selecione para adicionar à lista...</option>
+                  {agentes
+                    .filter(
+                      (agente) =>
+                        !csvAgentesSelecionados.find(
+                          (selecionado) => selecionado.id === agente.id,
+                        ),
+                    )
+                    .map((agente) => (
+                      <option key={agente.id} value={agente.id}>
+                        {agente.nome}
+                      </option>
+                    ))}
                 </select>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-slate-700">
                     Data inicial
@@ -874,7 +962,7 @@ export default function SupervisorDashboard() {
                     type="date"
                     value={csvDataInicio}
                     onChange={(event) => setCsvDataInicio(event.target.value)}
-                    className="w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800"
+                    className="w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 focus:outline-none"
                   />
                 </div>
                 <div className="space-y-2">
@@ -885,16 +973,21 @@ export default function SupervisorDashboard() {
                     type="date"
                     value={csvDataFim}
                     onChange={(event) => setCsvDataFim(event.target.value)}
-                    className="w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800"
+                    className="w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 focus:outline-none"
                   />
                 </div>
               </div>
               <span className="text-xs text-slate-500 flex items-center gap-2">
-                <Info className="w-3" />
-                Para obter todos os registros, mantenha as datas em branco.
+                <Info className="w-3 shrink-0" />
+                Para obter todo o histórico disponível, mantenha as datas em
+                branco.
               </span>
 
-              {erroCsv && <p className="text-sm text-red-600">{erroCsv}</p>}
+              {erroCsv && (
+                <p className="text-sm font-medium text-red-600 bg-red-50 p-2 rounded-md border border-red-100">
+                  {erroCsv}
+                </p>
+              )}
             </div>
 
             <div className="px-4 py-3 bg-slate-50 border-t border-slate-200 flex flex-wrap justify-end gap-2">

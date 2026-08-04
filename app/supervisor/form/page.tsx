@@ -17,7 +17,6 @@ import { useRouter } from "next/navigation";
 // --- FUNÇÃO PARA COMPRIMIR IMAGENS NO NAVEGADOR ---
 const comprimirImagem = (file: File): Promise<File> => {
   return new Promise((resolve, reject) => {
-    // Se não for imagem (ex: PDF), não comprime e devolve o arquivo original
     if (!file.type.startsWith("image/")) {
       return resolve(file);
     }
@@ -43,7 +42,6 @@ const comprimirImagem = (file: File): Promise<File> => {
         const ctx = canvas.getContext("2d");
         ctx?.drawImage(img, 0, 0, width, height);
 
-        // Comprime para JPEG com 70% de qualidade
         canvas.toBlob(
           (blob) => {
             if (blob) {
@@ -71,7 +69,7 @@ const comprimirImagem = (file: File): Promise<File> => {
 
 export default function FormularioSupervisor() {
   const CLOUDINARY_CLOUD_NAME = "nswds35z";
-  const CLOUDINARY_UPLOAD_PRESET = "pmcap-atestados";
+  const CLOUDINARY_UPLOAD_PRESET = "pmap_atestados";
   const router = useRouter();
 
   const [agentes, setAgentes] = useState<
@@ -79,13 +77,15 @@ export default function FormularioSupervisor() {
   >([]);
   const [agenteSelecionado, setAgenteSelecionado] = useState("");
 
-  // Datas
   const [dataRegistro, setDataRegistro] = useState(
     new Date().toISOString().split("T")[0],
   );
-  const [dataFim, setDataFim] = useState(""); // Novo estado para o período final
+  const [dataFim, setDataFim] = useState("");
 
   const [justificarAusencia, setJustificarAusencia] = useState(false);
+  const [tipoAusencia, setTipoAusencia] = useState<
+    "atestado" | "ferias" | "outro" | ""
+  >("");
   const [justificativaAusencia, setJustificativaAusencia] = useState("");
   const [arquivoAtestado, setArquivoAtestado] = useState<File | null>(null);
 
@@ -122,16 +122,35 @@ export default function FormularioSupervisor() {
       return;
     }
 
-    if (justificarAusencia && justificativaAusencia.trim() === "") {
-      setErro("Descreva a justificativa para a ausência.");
-      setLoading(false);
-      return;
-    }
+    if (justificarAusencia) {
+      if (!tipoAusencia) {
+        setErro("Selecione o tipo de justificativa.");
+        setLoading(false);
+        return;
+      }
 
-    if (justificarAusencia && !dataFim) {
-      setErro("A data final do período de ausência é obrigatória.");
-      setLoading(false);
-      return;
+      if (tipoAusencia === "outro" && justificativaAusencia.trim() === "") {
+        setErro("Descreva o motivo da ausência.");
+        setLoading(false);
+        return;
+      }
+
+      if (
+        (tipoAusencia === "atestado" || tipoAusencia === "outro") &&
+        !arquivoAtestado
+      ) {
+        setErro(
+          "É obrigatório anexar o documento comprobatório para este tipo de ausência.",
+        );
+        setLoading(false);
+        return;
+      }
+
+      if (!dataFim) {
+        setErro("A data final do período de ausência é obrigatória.");
+        setLoading(false);
+        return;
+      }
     }
 
     try {
@@ -140,7 +159,6 @@ export default function FormularioSupervisor() {
         throw new Error("Usuário não autenticado");
       }
 
-      // 1. CALCULA OS DIAS ÚTEIS DO PERÍODO
       const datasParaSalvar: Date[] = [];
       const atual = new Date(`${dataRegistro}T12:00:00`);
       const final = justificarAusencia
@@ -153,10 +171,8 @@ export default function FormularioSupervisor() {
         return;
       }
 
-      // Loop do dia inicial até o dia final
       while (atual <= final) {
         const diaSemana = atual.getDay();
-        // Ignora sábados (6) e domingos (0)
         if (diaSemana !== 0 && diaSemana !== 6) {
           datasParaSalvar.push(new Date(atual));
         }
@@ -173,8 +189,12 @@ export default function FormularioSupervisor() {
 
       let urlComprovanteSalva = null;
 
-      // 2. UPLOAD DO ATESTADO COM COMPRESSÃO (Feito apenas 1 vez)
-      if (justificarAusencia && arquivoAtestado) {
+      // Upload apenas se houver arquivo (Atestado ou Outro)
+      if (
+        justificarAusencia &&
+        arquivoAtestado &&
+        (tipoAusencia === "atestado" || tipoAusencia === "outro")
+      ) {
         const arquivoComprimido = await comprimirImagem(arquivoAtestado);
 
         const formData = new FormData();
@@ -197,7 +217,11 @@ export default function FormularioSupervisor() {
         }
       }
 
-      // 3. SALVA NO FIRESTORE (Gera um documento para cada dia do período)
+      // Prepara o texto da justificativa baseado na seleção
+      let textoJustificativa = justificativaAusencia.trim();
+      if (tipoAusencia === "atestado") textoJustificativa = "Atestado Médico";
+      if (tipoAusencia === "ferias") textoJustificativa = "Férias";
+
       const promessas = datasParaSalvar.map((dataAlvo) => {
         const dadosRegistro: Record<string, unknown> = {
           agenteId: agenteSelecionado,
@@ -206,12 +230,12 @@ export default function FormularioSupervisor() {
           dataRegistro: Timestamp.fromDate(dataAlvo),
           enviadoEm: serverTimestamp(),
           houveDesembarque: false,
-          observacoes: justificativaAusencia.trim()
-            ? `Registro de ausência justificada pelo supervisor: ${justificativaAusencia.trim()}`
+          observacoes: justificarAusencia
+            ? `Registro de ausência justificada pelo supervisor: ${textoJustificativa}`
             : "Registro enviado pelo supervisor.",
           ausenciaJustificada: justificarAusencia,
-          justificativaAusencia: justificativaAusencia.trim(),
-          urlComprovante: urlComprovanteSalva, // Todos os dias terão o mesmo link do atestado
+          justificativaAusencia: justificarAusencia ? textoJustificativa : null,
+          urlComprovante: urlComprovanteSalva,
           solicitacaoRelatorio: false,
           identificacaoRelatorio: null,
         };
@@ -219,9 +243,7 @@ export default function FormularioSupervisor() {
         return addDoc(collection(db, "registros_diarios"), dadosRegistro);
       });
 
-      // Aguarda todos os dias serem salvos
       await Promise.all(promessas);
-
       router.push("/supervisor");
     } catch (err) {
       console.error(err);
@@ -279,9 +301,10 @@ export default function FormularioSupervisor() {
                 checked={!justificarAusencia}
                 onChange={() => {
                   setJustificarAusencia(false);
+                  setTipoAusencia("");
                   setJustificativaAusencia("");
                   setArquivoAtestado(null);
-                  setDataFim(""); // Reseta a data final ao desmarcar
+                  setDataFim("");
                 }}
               />
               Não
@@ -289,42 +312,74 @@ export default function FormularioSupervisor() {
           </div>
 
           {justificarAusencia && (
-            <div className="space-y-4 pt-2">
-              <textarea
-                className="w-full border border-slate-200 rounded-md p-2.5 text-sm text-slate-800 focus:outline-none bg-white"
-                placeholder="Explique a ausência do agente e o motivo da justificativa"
-                value={justificativaAusencia}
-                onChange={(e) => setJustificativaAusencia(e.target.value)}
-                rows={4}
-                required
-              />
-
+            <div className="space-y-4 pt-4 border-t border-slate-200 mt-2">
               <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700 block">
-                  Anexar Comprovante / Atestado (Obrigatório)
+                <label className="text-sm font-semibold text-slate-800">
+                  Tipo de Justificativa
                 </label>
-                <input
-                  type="file"
-                  accept="image/*,application/pdf"
-                  required
+                <select
+                  className="w-full border border-slate-200 rounded-md bg-white p-2.5 text-slate-800 focus:outline-none"
+                  value={tipoAusencia}
                   onChange={(e) => {
-                    if (e.target.files && e.target.files.length > 0) {
-                      setArquivoAtestado(e.target.files[0]);
+                    setTipoAusencia(
+                      e.target.value as "atestado" | "ferias" | "outro",
+                    );
+                    if (e.target.value !== "outro") {
+                      setJustificativaAusencia("");
                     }
                   }}
-                  className="w-full text-sm text-slate-600 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-slate-800 file:text-white hover:file:bg-slate-700 cursor-pointer bg-white border border-slate-200 rounded-md p-1"
-                />
-                {arquivoAtestado && (
-                  <p className="text-xs font-medium text-emerald-600 mt-1">
-                    Anexo selecionado: {arquivoAtestado.name}
-                  </p>
-                )}
+                  required
+                >
+                  <option value="">Selecione o tipo...</option>
+                  <option value="atestado">Atestado Médico</option>
+                  <option value="ferias">Férias</option>
+                  <option value="outro">Outro motivo</option>
+                </select>
               </div>
+
+              {tipoAusencia === "outro" && (
+                <div className="space-y-2 animate-in fade-in">
+                  <label className="text-sm font-semibold text-slate-800">
+                    Descrição do Motivo (Obrigatório)
+                  </label>
+                  <textarea
+                    className="w-full border border-slate-200 rounded-md p-2.5 text-sm text-slate-800 focus:outline-none bg-white"
+                    placeholder="Explique o motivo da ausência..."
+                    value={justificativaAusencia}
+                    onChange={(e) => setJustificativaAusencia(e.target.value)}
+                    rows={3}
+                    required
+                  />
+                </div>
+              )}
+
+              {(tipoAusencia === "atestado" || tipoAusencia === "outro") && (
+                <div className="space-y-2 animate-in fade-in">
+                  <label className="text-sm font-semibold text-slate-800 block">
+                    Anexar Comprovante / Atestado (Obrigatório)
+                  </label>
+                  <input
+                    type="file"
+                    accept="image/*,application/pdf"
+                    required
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files.length > 0) {
+                        setArquivoAtestado(e.target.files[0]);
+                      }
+                    }}
+                    className="w-full text-sm text-slate-600 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-slate-800 file:text-white hover:file:bg-slate-700 cursor-pointer bg-white border border-slate-200 rounded-md p-1"
+                  />
+                  {arquivoAtestado && (
+                    <p className="text-xs font-medium text-emerald-600 mt-1">
+                      Anexo selecionado: {arquivoAtestado.name}
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>
 
-        {/* CONTROLE DE DATAS (Se for ausência, mostra o período inteiro) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-2">
             <label className="text-sm font-semibold text-slate-800">
@@ -340,7 +395,7 @@ export default function FormularioSupervisor() {
           </div>
 
           {justificarAusencia && (
-            <div className="space-y-2">
+            <div className="space-y-2 animate-in fade-in">
               <label className="text-sm font-semibold text-slate-800">
                 Data Final (Obrigatório)
               </label>
@@ -348,7 +403,7 @@ export default function FormularioSupervisor() {
                 type="date"
                 value={dataFim}
                 min={dataRegistro}
-                required // <--- Adicionado
+                required
                 onChange={(e) => setDataFim(e.target.value)}
                 className="w-full border border-slate-200 rounded-md bg-slate-50 p-2.5 text-slate-800 focus:outline-none"
               />
