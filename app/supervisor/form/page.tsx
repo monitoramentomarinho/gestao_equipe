@@ -135,10 +135,7 @@ export default function FormularioSupervisor() {
         return;
       }
 
-      if (
-        (tipoAusencia === "atestado" || tipoAusencia === "outro") &&
-        !arquivoAtestado
-      ) {
+      if (tipoAusencia === "atestado" && !arquivoAtestado) {
         setErro(
           "É obrigatório anexar o documento comprobatório para este tipo de ausência.",
         );
@@ -353,7 +350,7 @@ export default function FormularioSupervisor() {
                 </div>
               )}
 
-              {(tipoAusencia === "atestado" || tipoAusencia === "outro") && (
+              {tipoAusencia === "atestado" && (
                 <div className="space-y-2 animate-in fade-in">
                   <label className="text-sm font-semibold text-slate-800 block">
                     Anexar Comprovante / Atestado (Obrigatório)
@@ -362,6 +359,29 @@ export default function FormularioSupervisor() {
                     type="file"
                     accept="image/*,application/pdf"
                     required
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files.length > 0) {
+                        setArquivoAtestado(e.target.files[0]);
+                      }
+                    }}
+                    className="w-full text-sm text-slate-600 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-slate-800 file:text-white hover:file:bg-slate-700 cursor-pointer bg-white border border-slate-200 rounded-md p-1"
+                  />
+                  {arquivoAtestado && (
+                    <p className="text-xs font-medium text-emerald-600 mt-1">
+                      Anexo selecionado: {arquivoAtestado.name}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {tipoAusencia === "outro" && (
+                <div className="space-y-2 animate-in fade-in">
+                  <label className="text-sm font-semibold text-slate-800 block">
+                    Anexar Comprovante / Atestado (Opicional)
+                  </label>
+                  <input
+                    type="file"
+                    accept="image/*,application/pdf"
                     onChange={(e) => {
                       if (e.target.files && e.target.files.length > 0) {
                         setArquivoAtestado(e.target.files[0]);
